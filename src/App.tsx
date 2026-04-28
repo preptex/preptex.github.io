@@ -117,7 +117,9 @@ function App() {
         <Codeview filename={selectedFile} code={code} />
       </div>
 
-      <div className="AppCell AppCell--right">{rootNode ? <ASTview root={rootNode} /> : null}</div>
+      <div className="AppCell AppCell--right">
+        <ASTview root={rootNode} />
+      </div>
     </div>
   );
 }
