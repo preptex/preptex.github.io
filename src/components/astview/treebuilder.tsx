@@ -1,4 +1,3 @@
-import * as d3 from 'd3';
 import {
   AstNode,
   CommandNode,
@@ -21,36 +20,26 @@ function sectionStrokeWidth(node?: AstNode): { strokeWidth: number; strokeColor?
 }
 
 export class TreeLayoutBuilder {
-  private readonly nodeX = 120; // horizontal spacing
-  private readonly nodeY = 120; // vertical spacing (increase to prevent node/edge overlap)
-
   build(rootNode: AstNode): LayoutNode {
-    const hierarchy = d3.hierarchy<AstNode>(rootNode, (d: AstNode) =>
-      Array.isArray((d as any).children) ? ((d as any).children as AstNode[]) : undefined
-    );
-
-    // d3.tree uses x for breadth and y for depth.
-    // For a vertical tree: x is horizontal, y increases downward by depth.
-    const treeLayout = d3.tree<AstNode>().nodeSize([this.nodeX, this.nodeY]);
-
-    const layoutRoot = treeLayout(hierarchy);
-    return this.convert(layoutRoot);
+    return this.convert(rootNode);
   }
 
-  private convert(node: d3.HierarchyPointNode<AstNode>): LayoutNode {
-    const info = this.getNodeInfo(node.data);
-    const strokeInfo = sectionStrokeWidth(node.data);
+  private convert(node: AstNode): LayoutNode {
+    const info = this.getNodeInfo(node);
+    const strokeInfo = sectionStrokeWidth(node);
+    const children = Array.isArray((node as any).children)
+      ? ((node as any).children as AstNode[]).map((child) => this.convert(child))
+      : [];
+
     return {
       ...strokeInfo,
-      id: node.data.id,
-      type: node.data.type,
-      x: node.x,
-      y: node.y,
+      id: node.id,
+      type: node.type,
+      x: 0,
+      y: 0,
       label: info.label,
       sublabel: info.sublabel,
-      children: node.children
-        ? node.children.map((child: d3.HierarchyPointNode<AstNode>) => this.convert(child))
-        : [],
+      children,
     };
   }
 
