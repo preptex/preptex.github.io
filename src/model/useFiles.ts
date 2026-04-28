@@ -2,6 +2,10 @@ import { useCallback, useMemo, useState } from 'react';
 
 export type FilesMap = Record<string, string>;
 
+type FileWithRelativePath = File & {
+  webkitRelativePath?: string;
+};
+
 export type FilesMutation = {
   id: number;
   upserts: Record<string, string>;
@@ -25,7 +29,10 @@ export function useFiles(initial: FilesMap = {}) {
           new Promise<[string, string]>((resolve, reject) => {
             const reader = new FileReader();
             reader.onerror = () => reject(reader.error);
-            reader.onload = () => resolve([f.name, String(reader.result ?? '')]);
+            reader.onload = () => {
+              const path = (f as FileWithRelativePath).webkitRelativePath || f.name;
+              resolve([path.replace(/\\/g, '/'), String(reader.result ?? '')]);
+            };
             reader.readAsText(f);
           })
       )

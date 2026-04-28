@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 export type FiletreeProps = {
   files: string[];
@@ -7,6 +7,22 @@ export type FiletreeProps = {
   onDownload?: (filename: string) => void;
   onRemove?: (filename: string) => void;
   onUploadFiles?: (files: FileList) => void;
+};
+
+type FiletreeNode = {
+  name: string;
+  path: string;
+  type: 'file' | 'folder';
+  children?: FiletreeNode[];
+};
+
+type TreeNodeProps = {
+  node: FiletreeNode;
+  depth: number;
+  selected?: string;
+  onSelect: (filename: string) => void;
+  onDownload?: (filename: string) => void;
+  onRemove?: (filename: string) => void;
 };
 
 function shortenFilenameMiddle(filename: string, maxLength = 30): string {
@@ -25,6 +41,142 @@ function shortenFilenameMiddle(filename: string, maxLength = 30): string {
   return base.slice(0, headLen) + ellipsis + base.slice(Math.max(0, base.length - tailLen)) + ext;
 }
 
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
+function sortNodes(a: FiletreeNode, b: FiletreeNode): number {
+  if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function buildFiletree(files: string[]): FiletreeNode[] {
+  const root: FiletreeNode = { name: '', path: '', type: 'folder', children: [] };
+
+  for (const filename of files) {
+    const normalized = normalizePath(filename);
+    if (!normalized) continue;
+
+    const parts = normalized.split('/').filter(Boolean);
+    let cursor = root;
+
+    parts.forEach((part, index) => {
+      const isFile = index === parts.length - 1;
+      const path = parts.slice(0, index + 1).join('/');
+      const type = isFile ? 'file' : 'folder';
+
+      let child = cursor.children?.find((item) => item.name === part && item.type === type);
+      if (!child) {
+        child = {
+          name: part,
+          path: isFile ? normalized : path,
+          type,
+          children: isFile ? undefined : [],
+        };
+        cursor.children = [...(cursor.children ?? []), child];
+      }
+
+      if (!isFile) {
+        cursor = child;
+      }
+    });
+  }
+
+  const sortRecursive = (nodes: FiletreeNode[]): FiletreeNode[] =>
+    nodes
+      .map((node) => ({
+        ...node,
+        children: node.children ? sortRecursive(node.children) : undefined,
+      }))
+      .sort(sortNodes);
+
+  return sortRecursive(root.children ?? []);
+}
+
+function TreeNode({ node, depth, selected, onSelect, onDownload, onRemove }: TreeNodeProps) {
+  const [open, setOpen] = useState(true);
+  const isFolder = node.type === 'folder';
+  const isActive = selected === node.path;
+
+  const toggleOrSelect = () => {
+    if (isFolder) {
+      setOpen((value) => !value);
+    } else {
+      onSelect(node.path);
+    }
+  };
+
+  return (
+    <div className="FiletreeNode">
+      <div
+        className={isActive ? 'FiletreeRow FiletreeRow--active' : 'FiletreeRow'}
+        style={{ paddingLeft: depth * 12 }}
+      >
+        <button
+          type="button"
+          className="ControlItem FiletreeItem"
+          onClick={toggleOrSelect}
+          title={node.path}
+          aria-expanded={isFolder ? open : undefined}
+        >
+          <span className="FiletreeChevron" aria-hidden="true">
+            {isFolder ? (open ? 'v' : '>') : ''}
+          </span>
+          <span className={isFolder ? 'FiletreeName FiletreeName--folder' : 'FiletreeName'}>
+            {isFolder ? node.name : shortenFilenameMiddle(node.name)}
+          </span>
+        </button>
+
+        {!isFolder && onDownload ? (
+          <button
+            type="button"
+            className="ControlItem FiletreeAction"
+            aria-label={`Download ${node.path}`}
+            title={`Download ${node.path}`}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDownload(node.path);
+            }}
+          >
+            Download
+          </button>
+        ) : null}
+
+        {!isFolder && onRemove ? (
+          <button
+            type="button"
+            className="ControlItem FiletreeAction FiletreeAction--remove"
+            aria-label={`Remove ${node.path}`}
+            title={`Remove ${node.path}`}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onRemove(node.path);
+            }}
+          >
+            Remove
+          </button>
+        ) : null}
+      </div>
+
+      {isFolder && open
+        ? node.children?.map((child) => (
+            <TreeNode
+              key={`${child.type}:${child.path}`}
+              node={child}
+              depth={depth + 1}
+              selected={selected}
+              onSelect={onSelect}
+              onDownload={onDownload}
+              onRemove={onRemove}
+            />
+          ))
+        : null}
+    </div>
+  );
+}
+
 export default function Filetree({
   files,
   selected,
@@ -34,11 +186,25 @@ export default function Filetree({
   onUploadFiles,
 }: FiletreeProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const tree = useMemo(() => buildFiletree(files), [files]);
+
+  useEffect(() => {
+    folderInputRef.current?.setAttribute('webkitdirectory', '');
+    folderInputRef.current?.setAttribute('directory', '');
+  }, []);
 
   const triggerPicker = () => {
     if (inputRef.current) {
       inputRef.current.value = '';
       inputRef.current.click();
+    }
+  };
+
+  const triggerFolderPicker = () => {
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
+      folderInputRef.current.click();
     }
   };
 
@@ -53,9 +219,12 @@ export default function Filetree({
     <section aria-label="File tree">
       <h2>Filetree</h2>
       {onUploadFiles ? (
-        <div style={{ marginBottom: 8 }}>
-          <button type="button" className="FiletreeItem" onClick={triggerPicker}>
-            Upload files…
+        <div className="FiletreeActions">
+          <button type="button" className="ControlItem FiletreeUpload" onClick={triggerPicker}>
+            Upload files...
+          </button>
+          <button type="button" className="ControlItem FiletreeUpload" onClick={triggerFolderPicker}>
+            Upload folder...
           </button>
           <input
             ref={inputRef}
@@ -64,59 +233,29 @@ export default function Filetree({
             onChange={onFilesChange}
             style={{ display: 'none' }}
           />
+          <input
+            ref={folderInputRef}
+            type="file"
+            multiple
+            onChange={onFilesChange}
+            style={{ display: 'none' }}
+          />
         </div>
       ) : null}
-      <div className="FiletreeList" role="list">
+      <div className="FiletreeList" role="tree">
         {files.length === 0 ? (
-          <div>No files</div>
+          <div className="PaneMeta">No files</div>
         ) : (
-          files.map((f) => (
-            <div key={f} className="FiletreeRow">
-              <button
-                type="button"
-                className={
-                  selected === f
-                    ? 'ControlItem FiletreeItem FiletreeItem--active'
-                    : 'ControlItem FiletreeItem'
-                }
-                onClick={() => onSelect(f)}
-                title={f}
-              >
-                {shortenFilenameMiddle(f)}
-              </button>
-
-              {onDownload ? (
-                <button
-                  type="button"
-                  className="ControlItem FiletreeDownload"
-                  aria-label={`Download ${f}`}
-                  title={`Download ${f}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onDownload(f);
-                  }}
-                >
-                  ⬇
-                </button>
-              ) : null}
-
-              {onRemove ? (
-                <button
-                  type="button"
-                  className="ControlItem FiletreeRemove"
-                  aria-label={`Remove ${f}`}
-                  title={`Remove ${f}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onRemove(f);
-                  }}
-                >
-                  ✕
-                </button>
-              ) : null}
-            </div>
+          tree.map((node) => (
+            <TreeNode
+              key={`${node.type}:${node.path}`}
+              node={node}
+              depth={0}
+              selected={selected}
+              onSelect={onSelect}
+              onDownload={onDownload}
+              onRemove={onRemove}
+            />
           ))
         )}
       </div>
