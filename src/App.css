@@ -1,7 +1,8 @@
 .App {
   height: 100vh;
   display: grid;
-  grid-template-columns: minmax(220px, 320px) minmax(520px, 1fr) minmax(220px, 320px);
+  grid-template-columns: minmax(220px, 320px) minmax(520px, 1fr)
+    var(--ast-pane-col, minmax(220px, 320px));
   grid-template-rows: minmax(0, 1fr) minmax(220px, 34vh);
   align-items: stretch;
   gap: 0;
@@ -41,6 +42,37 @@
   grid-column: 3;
   grid-row: 1;
   border-bottom: 1px solid var(--color-border);
+  position: relative;
+}
+
+.AppCell--rightCollapsed {
+  padding: 0;
+  overflow: hidden;
+}
+
+.AstPaneResizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+
+.AstPaneResizer:hover {
+  background: var(--color-surface-muted);
+}
+
+.AstPaneResizer::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-border);
 }
 
 .PaneMeta {
@@ -51,6 +83,7 @@
 }
 
 section > h2,
+.AstTreeHeader > h2,
 .CodeviewTitle {
   margin: 0;
   color: var(--color-primary-strong);
@@ -212,8 +245,54 @@ section[aria-label='File tree'] {
   box-sizing: border-box;
 }
 
-.AstTree h2 {
+.AstTreeHeader {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.AstTreeHeader h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.AstTreeToggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: 12px/1 var(--font-mono);
+}
+
+.AstTreeToggle:hover {
+  background: var(--color-surface-muted);
+}
+
+.AstTree--collapsed {
+  gap: 0;
+  padding: 6px 0;
+}
+
+.AstTree--collapsed .AstTreeHeader {
+  justify-content: center;
+}
+
+.AstTree--collapsed .AstTreeHeader h2 {
+  display: none;
 }
 
 .AstTreeList {

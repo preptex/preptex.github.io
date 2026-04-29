@@ -45,7 +45,7 @@ export default function TreeNode({ node, onSelectNode }: TreeNodeProps) {
           {node.icon}
         </span>
         <span className="AstTreeType">{node.kind}</span>
-        {displayData ? <span className="AstTreeData">[{displayData}]</span> : null}
+        {displayData ? <span className="AstTreeData">{displayData}</span> : null}
         <span className="AstTreeLine">{getNodeLine(node)}</span>
       </button>
 
