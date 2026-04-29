@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import './App.css';
 
 import { ASTview, Codeview, ControlPanel, Filetree } from './components';
@@ -9,6 +9,9 @@ import { TreeLayoutBuilder } from './components/astview/treebuilder';
 
 function App() {
   const seedFiles = useMemo<Record<string, string>>(() => ({}), []);
+
+  const [jumpToLine, setJumpToLine] = useState<number | undefined>(undefined);
+  const [jumpToken, setJumpToken] = useState(0);
 
   const {
     filesByName,
@@ -82,6 +85,7 @@ function App() {
   };
 
   const onSelectFile = (name: string) => {
+    setJumpToLine(undefined);
     selectFile(name);
   };
 
@@ -114,11 +118,24 @@ function App() {
       </div>
 
       <div className="AppCell AppCell--middle">
-        <Codeview filename={selectedFile} code={code} />
+        <Codeview
+          filename={selectedFile}
+          code={code}
+          jumpToLine={jumpToLine}
+          jumpToken={jumpToken}
+        />
       </div>
 
       <div className="AppCell AppCell--right">
-        <ASTview root={rootNode} />
+        <ASTview
+          root={rootNode}
+          onSelectNode={(node) => {
+            if (typeof node.line === 'number' && Number.isFinite(node.line)) {
+              setJumpToLine(node.line);
+              setJumpToken((value) => value + 1);
+            }
+          }}
+        />
       </div>
     </div>
   );

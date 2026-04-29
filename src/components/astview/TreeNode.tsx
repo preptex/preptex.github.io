@@ -3,6 +3,7 @@ import { LayoutNode } from '../../types/LayoutNode';
 
 interface TreeNodeProps {
   node: LayoutNode;
+  onSelectNode?: (node: LayoutNode) => void;
 }
 
 function clamp(value = '', max = 64): string {
@@ -17,7 +18,7 @@ function getNodeLine(node: LayoutNode): string {
   return typeof node.line === 'number' && Number.isFinite(node.line) ? `: l${node.line}` : '';
 }
 
-export default function TreeNode({ node }: TreeNodeProps) {
+export default function TreeNode({ node, onSelectNode }: TreeNodeProps) {
   const [open, setOpen] = useState(true);
   const isFolder = Boolean(node.children?.length);
   const displayData = getDisplayData(node);
@@ -33,6 +34,7 @@ export default function TreeNode({ node }: TreeNodeProps) {
         type="button"
         className="AstTreeRow"
         onClick={() => {
+          onSelectNode?.(node);
           if (isFolder) setOpen((value) => !value);
         }}
       >
@@ -50,7 +52,7 @@ export default function TreeNode({ node }: TreeNodeProps) {
       {isFolder && open ? (
         <div className="AstTreeChildren">
           {node.children?.map((child) => (
-            <TreeNode key={child.id} node={child} />
+            <TreeNode key={child.id} node={child} onSelectNode={onSelectNode} />
           ))}
         </div>
       ) : null}
