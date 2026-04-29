@@ -4,12 +4,12 @@ import {
   transform as coreTransform,
   combine_project,
   InputCmdHandling,
+  TokenType,
   type LexerOptions,
 } from '@preptex/core';
 
 import type { CoreOptionsUI } from './useControl';
 import type { FilesMutation } from './useFiles';
-import { TokenType } from '@preptex/core';
 export type CoreRunResult = {
   declaredConditions: string[];
   error?: string;
@@ -18,6 +18,7 @@ export type CoreRunResult = {
 type CoreProject = ReturnType<typeof coreProcess>;
 
 const DEFAULT_TOKENS = new Set<TokenType>([
+  TokenType.Environment,
   TokenType.Section,
   TokenType.Condition,
   TokenType.ConditionDeclaration,
