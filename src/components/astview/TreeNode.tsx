@@ -30,24 +30,38 @@ export default function TreeNode({ node, onSelectNode }: TreeNodeProps) {
       aria-expanded={isFolder ? open : undefined}
       aria-selected={false}
     >
-      <button
-        type="button"
-        className="AstTreeRow"
-        onClick={() => {
-          onSelectNode?.(node);
-          if (isFolder) setOpen((value) => !value);
-        }}
-      >
-        <span className="AstTreeChevron" aria-hidden="true">
-          {isFolder ? (open ? '⌄' : '›') : ''}
-        </span>
-        <span className={`AstTreeIcon AstTreeIcon--${node.kind}`} aria-hidden="true">
-          {node.icon}
-        </span>
-        <span className="AstTreeType">{node.kind}</span>
-        {displayData ? <span className="AstTreeData">{displayData}</span> : null}
-        <span className="AstTreeLine">{getNodeLine(node)}</span>
-      </button>
+      <div className="AstTreeRow">
+        {isFolder ? (
+          <button
+            type="button"
+            className="AstTreeRowToggle"
+            onClick={() => setOpen((value) => !value)}
+            aria-label={open ? 'Collapse node' : 'Expand node'}
+            title={open ? 'Collapse' : 'Expand'}
+          >
+            <span className="AstTreeChevron" aria-hidden="true">
+              {open ? '⌄' : '›'}
+            </span>
+          </button>
+        ) : (
+          <span className="AstTreeChevron AstTreeChevron--spacer" aria-hidden="true" />
+        )}
+
+        <button
+          type="button"
+          className="AstTreeRowMain"
+          onClick={() => {
+            onSelectNode?.(node);
+          }}
+        >
+          <span className={`AstTreeIcon AstTreeIcon--${node.kind}`} aria-hidden="true">
+            {node.icon}
+          </span>
+          <span className="AstTreeType">{node.kind}</span>
+          {displayData ? <span className="AstTreeData">{displayData}</span> : null}
+          <span className="AstTreeLine">{getNodeLine(node)}</span>
+        </button>
+      </div>
 
       {isFolder && open ? (
         <div className="AstTreeChildren">

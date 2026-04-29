@@ -322,13 +322,9 @@ section[aria-label='File tree'] {
   display: flex;
   align-items: center;
   gap: 6px;
-  border: 0;
   border-radius: 6px;
   background: transparent;
   color: inherit;
-  cursor: pointer;
-  font: 12px/1.25 inherit;
-  text-align: left;
   padding: 3px 6px;
   box-sizing: border-box;
 }
@@ -344,6 +340,36 @@ section[aria-label='File tree'] {
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--color-text-muted);
+}
+
+.AstTreeChevron--spacer {
+  visibility: hidden;
+}
+
+.AstTreeRowToggle {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: inherit;
+}
+
+.AstTreeRowMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: inherit;
+  font: 12px/1.25 inherit;
+  text-align: left;
 }
 
 .AstTreeIcon {
@@ -413,8 +439,8 @@ section[aria-label='File tree'] {
 }
 
 .AstTreeChildren {
-  margin-left: 16px;
-  padding-left: 12px;
+  margin-left: 10px;
+  padding-left: 8px;
   border-left: 1px solid rgba(64, 82, 137, 0.16);
 }
 
@@ -425,9 +451,9 @@ section[aria-label='File tree'] {
 .AstTreeChildren > .AstTreeNode > .AstTreeRow::before {
   content: '';
   position: absolute;
-  left: -12px;
+  left: -8px;
   top: 50%;
-  width: 10px;
+  width: 6px;
   height: 1px;
   background: rgba(64, 82, 137, 0.16);
 }
