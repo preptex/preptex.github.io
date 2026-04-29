@@ -4,6 +4,8 @@ import {
   transform as coreTransform,
   combine_project,
   InputCmdHandling,
+  TokenType,
+  type LexerOptions,
 } from '@preptex/core';
 
 import type { CoreOptionsUI } from './useControl';
@@ -14,6 +16,16 @@ export type CoreRunResult = {
 };
 
 type CoreProject = ReturnType<typeof coreProcess>;
+
+const DEFAULT_TOKENS = new Set<TokenType>([
+  TokenType.Environment,
+  TokenType.Section,
+  TokenType.Condition,
+  TokenType.ConditionDeclaration,
+  TokenType.Command,
+  TokenType.Input,
+  TokenType.Comment,
+]);
 
 export function useCoreProcess(entryFile: string, mutation: FilesMutation, options: CoreOptionsUI) {
   const [result, setResult] = useState<CoreRunResult | null>(null);
@@ -54,7 +66,9 @@ export function useCoreProcess(entryFile: string, mutation: FilesMutation, optio
           delete versionedFilesRef.current[name];
         }
 
-        globalProjectRef.current = coreProcess({ ...versionedFilesRef.current });
+        globalProjectRef.current = coreProcess({ ...versionedFilesRef.current }, {
+          enabledTokens: DEFAULT_TOKENS,
+        } as LexerOptions);
       }
 
       // Apply upserts: parse only the batch and combine into the global project.
@@ -68,7 +82,7 @@ export function useCoreProcess(entryFile: string, mutation: FilesMutation, optio
           batch[name] = vf;
         }
 
-        const batchProject = coreProcess(batch);
+        const batchProject = coreProcess(batch, { enabledTokens: DEFAULT_TOKENS } as LexerOptions);
         globalProjectRef.current = globalProjectRef.current
           ? combine_project(globalProjectRef.current, batchProject)
           : batchProject;
