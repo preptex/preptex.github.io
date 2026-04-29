@@ -8,10 +8,10 @@ interface ASTviewProps {
 export default function ASTview({ root }: ASTviewProps) {
   return (
     <section className="AstTree" aria-label="AST tree">
-      <h2>AST</h2>
+      <h2>AST View</h2>
       <div className="AstTreeList" role="tree">
         {root ? (
-          <TreeNode node={root} depth={0} />
+          <TreeNode node={root} />
         ) : (
           <div className="AstTreeEmpty">Select a file to inspect its structure.</div>
         )}

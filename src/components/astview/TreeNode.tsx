@@ -3,24 +3,24 @@ import { LayoutNode } from '../../types/LayoutNode';
 
 interface TreeNodeProps {
   node: LayoutNode;
-  depth: number;
 }
 
-function clamp(value: string, max = 48): string {
+function clamp(value = '', max = 64): string {
   return value.length > max ? value.slice(0, Math.max(0, max - 3)) + '...' : value;
 }
 
-function getNodeName(node: LayoutNode): string {
-  return node.label || node.type;
+function getDisplayData(node: LayoutNode): string {
+  return clamp(node.data || node.label || '');
 }
 
-function getNodeMeta(node: LayoutNode): string {
-  return node.sublabel || node.type;
+function getNodeLine(node: LayoutNode): string {
+  return typeof node.line === 'number' && Number.isFinite(node.line) ? `: l${node.line}` : '';
 }
 
-export default function TreeNode({ node, depth }: TreeNodeProps) {
+export default function TreeNode({ node }: TreeNodeProps) {
   const [open, setOpen] = useState(true);
   const isFolder = Boolean(node.children?.length);
+  const displayData = getDisplayData(node);
 
   return (
     <div
@@ -36,19 +36,24 @@ export default function TreeNode({ node, depth }: TreeNodeProps) {
           if (isFolder) setOpen((value) => !value);
         }}
       >
-        <span className="AstTreeIndent" style={{ width: depth * 14 }} aria-hidden="true" />
         <span className="AstTreeChevron" aria-hidden="true">
-          {isFolder ? (open ? 'v' : '>') : ''}
+          {isFolder ? (open ? '⌄' : '›') : ''}
         </span>
-        <span className="AstTreeName">{clamp(getNodeName(node))}</span>
-        <span className="AstTreeMeta">{clamp(getNodeMeta(node), 28)}</span>
+        <span className={`AstTreeIcon AstTreeIcon--${node.kind}`} aria-hidden="true">
+          {node.icon}
+        </span>
+        <span className="AstTreeType">{node.kind}</span>
+        {displayData ? <span className="AstTreeData">[{displayData}]</span> : null}
+        <span className="AstTreeLine">{getNodeLine(node)}</span>
       </button>
 
-      {isFolder && open
-        ? node.children?.map((child) => (
-            <TreeNode key={child.id} node={child} depth={depth + 1} />
-          ))
-        : null}
+      {isFolder && open ? (
+        <div className="AstTreeChildren">
+          {node.children?.map((child) => (
+            <TreeNode key={child.id} node={child} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

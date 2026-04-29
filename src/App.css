@@ -226,29 +226,31 @@ section[aria-label='File tree'] {
   border: 0;
   border-radius: 0;
   background: var(--color-surface);
-  padding: 0;
+  padding: 2px 0 6px;
   box-sizing: border-box;
 }
 
 .AstTreeNode {
   min-width: 0;
+  position: relative;
 }
 
 .AstTreeRow {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 30px;
+  min-height: 28px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: inherit;
   cursor: pointer;
-  font: 13px/1.2 inherit;
+  font: 12px/1.25 inherit;
   text-align: left;
+  padding: 3px 6px;
   box-sizing: border-box;
 }
 
@@ -256,36 +258,99 @@ section[aria-label='File tree'] {
   background: var(--color-surface-muted);
 }
 
-.AstTreeIndent {
-  flex: 0 1 auto;
-  max-width: 42%;
-}
-
 .AstTreeChevron {
-  flex: 0 0 12px;
-  width: 12px;
+  flex: 0 0 14px;
+  width: 14px;
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 11px;
-  opacity: 0.7;
+  font-size: 13px;
+  color: var(--color-text-muted);
 }
 
-.AstTreeName {
+.AstTreeIcon {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: #eef3ff;
+  color: var(--color-primary-strong);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px rgba(67, 56, 245, 0.08);
+}
+
+.AstTreeIcon--text {
+  background: #f3f6fb;
+  color: #53617f;
+}
+
+.AstTreeIcon--comment {
+  background: #eef9f2;
+  color: #277448;
+}
+
+.AstTreeIcon--if,
+.AstTreeIcon--else,
+.AstTreeIcon--condition {
+  background: #fff5df;
+  color: #9a5a00;
+}
+
+.AstTreeType {
+  flex: 0 0 auto;
+  color: var(--color-text);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
+  text-transform: lowercase;
 }
 
-.AstTreeMeta {
+.AstTreeData,
+.AstTreeLine {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-text-muted);
-  font-size: 12px;
+}
+
+.AstTreeData {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.AstTreeLine {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #7a86a6;
+}
+
+.AstTreeChildren {
+  margin-left: 16px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(64, 82, 137, 0.16);
+}
+
+.AstTreeChildren > .AstTreeNode > .AstTreeRow {
+  position: relative;
+}
+
+.AstTreeChildren > .AstTreeNode > .AstTreeRow::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 10px;
+  height: 1px;
+  background: rgba(64, 82, 137, 0.16);
 }
 
 .AstTreeEmpty {
