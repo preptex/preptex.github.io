@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import './App.css';
 
 import { ASTview, Codeview, ControlPanel, Filetree } from './components';
@@ -9,6 +9,14 @@ import { TreeLayoutBuilder } from './components/astview/treebuilder';
 
 function App() {
   const seedFiles = useMemo<Record<string, string>>(() => ({}), []);
+
+  const [jumpToLine, setJumpToLine] = useState<number | undefined>(undefined);
+  const [jumpToken, setJumpToken] = useState(0);
+
+  const [astCollapsed, setAstCollapsed] = useState(false);
+  const [astWidth, setAstWidth] = useState(320);
+  const astPaneRef = useRef<HTMLDivElement | null>(null);
+  const resizeRef = useRef<{ startX: number; startWidth: number; pointerId: number } | null>(null);
 
   const {
     filesByName,
@@ -82,15 +90,18 @@ function App() {
   };
 
   const onSelectFile = (name: string) => {
+    setJumpToLine(undefined);
     selectFile(name);
   };
+
+  const astPaneCol = astCollapsed ? '34px' : `${astWidth}px`;
 
   const onRemove = (name: string) => {
     removeFile(name);
   };
 
   return (
-    <div className="App">
+    <div className="App" style={{ ['--ast-pane-col' as any]: astPaneCol }}>
       <div className="AppCell AppCell--leftTop">
         <Filetree
           files={fileNames}
@@ -114,11 +125,73 @@ function App() {
       </div>
 
       <div className="AppCell AppCell--middle">
-        <Codeview filename={selectedFile} code={code} />
+        <Codeview
+          filename={selectedFile}
+          code={code}
+          jumpToLine={jumpToLine}
+          jumpToken={jumpToken}
+        />
       </div>
 
-      <div className="AppCell AppCell--right">
-        <ASTview root={rootNode} />
+      <div
+        className={`AppCell AppCell--right ${astCollapsed ? 'AppCell--rightCollapsed' : ''}`}
+        ref={astPaneRef}
+      >
+        {astCollapsed ? null : (
+          <div
+            className="AstPaneResizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize AST pane"
+            tabIndex={-1}
+            onPointerDown={(e) => {
+              if (!astPaneRef.current) return;
+              const startWidth = astPaneRef.current.getBoundingClientRect().width;
+              resizeRef.current = { startX: e.clientX, startWidth, pointerId: e.pointerId };
+              (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+              e.preventDefault();
+            }}
+            onPointerMove={(e) => {
+              const state = resizeRef.current;
+              if (!state || state.pointerId !== e.pointerId) return;
+              const dx = state.startX - e.clientX;
+              const maxWidth = Math.max(260, window.innerWidth - 520 - 220);
+              const next = Math.max(220, Math.min(maxWidth, Math.round(state.startWidth + dx)));
+              setAstWidth(next);
+            }}
+            onPointerUp={(e) => {
+              const state = resizeRef.current;
+              if (!state || state.pointerId !== e.pointerId) return;
+              resizeRef.current = null;
+              try {
+                (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+              } catch {
+                // ignore
+              }
+            }}
+            onPointerCancel={(e) => {
+              const state = resizeRef.current;
+              if (!state || state.pointerId !== e.pointerId) return;
+              resizeRef.current = null;
+              try {
+                (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+              } catch {
+                // ignore
+              }
+            }}
+          />
+        )}
+        <ASTview
+          root={rootNode}
+          onSelectNode={(node) => {
+            if (typeof node.line === 'number' && Number.isFinite(node.line)) {
+              setJumpToLine(node.line);
+              setJumpToken((value) => value + 1);
+            }
+          }}
+          collapsed={astCollapsed}
+          onToggleCollapsed={() => setAstCollapsed((value) => !value)}
+        />
       </div>
     </div>
   );

@@ -1,7 +1,8 @@
 .App {
   height: 100vh;
   display: grid;
-  grid-template-columns: minmax(220px, 320px) minmax(520px, 1fr) minmax(220px, 320px);
+  grid-template-columns: minmax(220px, 320px) minmax(520px, 1fr)
+    var(--ast-pane-col, minmax(220px, 320px));
   grid-template-rows: minmax(0, 1fr) minmax(220px, 34vh);
   align-items: stretch;
   gap: 0;
@@ -41,6 +42,39 @@
   grid-column: 3;
   grid-row: 1;
   border-bottom: 1px solid var(--color-border);
+  position: relative;
+  overflow: visible;
+  z-index: 5;
+}
+
+.AppCell--rightCollapsed {
+  padding: 0;
+  overflow: hidden;
+}
+
+.AstPaneResizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+
+.AstPaneResizer:hover {
+  background: var(--color-surface-muted);
+}
+
+.AstPaneResizer::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-border);
 }
 
 .PaneMeta {
@@ -51,6 +85,7 @@
 }
 
 section > h2,
+.AstTreeHeader > h2,
 .CodeviewTitle {
   margin: 0;
   color: var(--color-primary-strong);
@@ -210,10 +245,233 @@ section[aria-label='File tree'] {
   flex-direction: column;
   gap: 12px;
   box-sizing: border-box;
+  position: relative;
+  overflow: visible;
 }
 
-.AstTree h2 {
+.AstTreeHeader {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.AstTreeHeader h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.AstTreeActions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.AstTreeOptionsWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.AstTreeToggle,
+.AstTreeToolButton {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  width: 26px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: 12px/1 var(--font-mono);
+}
+
+.AstTreeToolButton {
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+.AstTreeToggle:hover,
+.AstTreeToolButton:hover,
+.AstTreeToolButton--active {
+  background: var(--color-surface-muted);
+  color: var(--color-primary-strong);
+  border-color: var(--color-border-strong);
+}
+
+.AstTreeOptions {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 100;
+  width: min(300px, calc(100vw - 32px));
+  max-height: min(560px, calc(100vh - 140px));
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  box-shadow: 0 18px 48px rgba(54, 67, 112, 0.18);
+  box-sizing: border-box;
+}
+
+.AstTreeOptionsSection + .AstTreeOptionsSection {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.AstTreeOptionsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.AstTreeOptionsTitle {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.AstTreeOptionsSection > .AstTreeOptionsTitle {
+  margin-bottom: 8px;
+}
+
+.AstTreeOptionsReset {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  padding: 5px 8px;
+  cursor: pointer;
+  font: 11px/1 inherit;
+}
+
+.AstTreeOptionsReset:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.AstTreeOptionCards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.AstTreeOptionCard {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(64, 82, 137, 0.12);
+  border-radius: 8px;
+  background: #f0f2f6;
+  color: #8a92a7;
+  padding: 6px 9px;
+  cursor: pointer;
+  font: 12px/1.15 inherit;
+  white-space: nowrap;
+}
+
+.AstTreeOptionCard:hover {
+  border-color: rgba(64, 82, 137, 0.2);
+  color: #64708b;
+}
+
+.AstTreeOptionCard--selected {
+  background: var(--color-surface-soft);
+  border-color: var(--color-border);
+  color: var(--color-text);
+  box-shadow: 0 6px 14px rgba(70, 86, 130, 0.08);
+}
+
+.AstTreeCommandCard {
+  font-family: var(--font-mono);
+}
+
+.AstTreeCommandDelete {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(14, 24, 51, 0.08);
+  color: currentColor;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.AstTreeOptionCard--selected .AstTreeCommandDelete {
+  background: rgba(14, 24, 51, 0.08);
+}
+
+.AstTreeCommandForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.AstTreeCommandForm input,
+.AstTreeCommandForm button {
+  min-width: 0;
+  height: 32px;
+  border-radius: 8px;
+  font: 12px/1 inherit;
+  box-sizing: border-box;
+}
+
+.AstTreeCommandForm input {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0 10px;
+}
+
+.AstTreeCommandForm input:focus {
+  outline: 2px solid rgba(67, 56, 245, 0.16);
+  border-color: var(--color-primary);
+}
+
+.AstTreeCommandForm button {
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.AstTree--collapsed {
+  gap: 0;
+  padding: 6px 0;
+}
+
+.AstTree--collapsed .AstTreeHeader {
+  justify-content: center;
+}
+
+.AstTree--collapsed .AstTreeHeader h2 {
+  display: none;
 }
 
 .AstTreeList {
@@ -226,29 +484,27 @@ section[aria-label='File tree'] {
   border: 0;
   border-radius: 0;
   background: var(--color-surface);
-  padding: 0;
+  padding: 2px 0 6px;
   box-sizing: border-box;
 }
 
 .AstTreeNode {
   min-width: 0;
+  position: relative;
 }
 
 .AstTreeRow {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 30px;
+  min-height: 28px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  border: 0;
+  gap: 6px;
   border-radius: 6px;
   background: transparent;
   color: inherit;
-  cursor: pointer;
-  font: 13px/1.2 inherit;
-  text-align: left;
+  padding: 3px 6px;
   box-sizing: border-box;
 }
 
@@ -256,36 +512,129 @@ section[aria-label='File tree'] {
   background: var(--color-surface-muted);
 }
 
-.AstTreeIndent {
-  flex: 0 1 auto;
-  max-width: 42%;
-}
-
 .AstTreeChevron {
-  flex: 0 0 12px;
-  width: 12px;
+  flex: 0 0 14px;
+  width: 14px;
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 11px;
-  opacity: 0.7;
+  font-size: 13px;
+  color: var(--color-text-muted);
 }
 
-.AstTreeName {
+.AstTreeChevron--spacer {
+  visibility: hidden;
+}
+
+.AstTreeRowToggle {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: inherit;
+}
+
+.AstTreeRowMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: inherit;
+  font: 12px/1.25 inherit;
+  text-align: left;
+}
+
+.AstTreeIcon {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: #eef3ff;
+  color: var(--color-primary-strong);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px rgba(67, 56, 245, 0.08);
+}
+
+.AstTreeIcon--text {
+  background: #f3f6fb;
+  color: #53617f;
+}
+
+.AstTreeIcon--comment {
+  background: #eef9f2;
+  color: #277448;
+}
+
+.AstTreeIcon--if,
+.AstTreeIcon--else,
+.AstTreeIcon--condition {
+  background: #fff5df;
+  color: #9a5a00;
+}
+
+.AstTreeType {
+  flex: 0 0 auto;
+  color: var(--color-text);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
+  text-transform: lowercase;
 }
 
-.AstTreeMeta {
+.AstTreeData,
+.AstTreeLine {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-text-muted);
-  font-size: 12px;
+}
+
+.AstTreeData {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.AstTreeLine {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #7a86a6;
+}
+
+.AstTreeChildren {
+  margin-left: 10px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(64, 82, 137, 0.16);
+}
+
+.AstTreeChildren > .AstTreeNode > .AstTreeRow {
+  position: relative;
+}
+
+.AstTreeChildren > .AstTreeNode > .AstTreeRow::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 6px;
+  height: 1px;
+  background: rgba(64, 82, 137, 0.16);
 }
 
 .AstTreeEmpty {
