@@ -29,17 +29,16 @@ const DEFAULT_NODE_KINDS = [
 const DEFAULT_VISIBLE_NODE_KINDS = [
   'root',
   'section',
-  'condition',
-  'if',
-  'else',
   'input',
 ];
 const DEFAULT_COMMANDS = ['title', 'author', 'label', 'ref', 'cite', 'includegraphics'];
-const DEFAULT_VISIBLE_COMMANDS = ['title', 'author', 'label'];
+const DEFAULT_VISIBLE_COMMANDS = ['title', 'author'];
 const DEFAULT_ENVIRONMENTS = [
   'document',
   'abstract',
   'figure',
+  'theorem',
+  'lemma',
   'table',
   'tabular',
   'itemize',
@@ -47,7 +46,7 @@ const DEFAULT_ENVIRONMENTS = [
   'equation',
   'align',
 ];
-const DEFAULT_VISIBLE_ENVIRONMENTS = ['document', 'abstract', 'figure', 'table', 'tabular'];
+const DEFAULT_VISIBLE_ENVIRONMENTS = ['document', 'abstract', 'figure', 'table', 'tabular', 'theorem'];
 
 type AstViewOptions = {
   visibleKinds: string[];
@@ -393,7 +392,7 @@ export default function ASTview({ root, onSelectNode, collapsed, onToggleCollaps
             aria-label={collapsed ? 'Expand AST view' : 'Collapse AST view'}
             title={collapsed ? 'Expand' : 'Collapse'}
           >
-            {collapsed ? '>' : '<'}
+            {collapsed ? '<' : '>'}
           </button>
         </div>
       </div>

@@ -1,11 +1,14 @@
 .App {
+  --bottom-panel-height: 300px;
   height: 100vh;
+  height: 100dvh;
   display: grid;
   grid-template-columns: minmax(220px, 320px) minmax(520px, 1fr)
     var(--ast-pane-col, minmax(220px, 320px));
-  grid-template-rows: minmax(0, 1fr) minmax(220px, 34vh);
+  grid-template-rows: minmax(0, 1fr) var(--bottom-panel-height);
   align-items: stretch;
   gap: 0;
+  overflow: hidden;
   background: var(--color-surface);
 }
 
@@ -29,6 +32,58 @@
   grid-column: 1 / span 3;
   grid-row: 2;
   border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: visible;
+}
+
+.BottomTabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.BottomTab {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  background: transparent;
+  color: var(--color-title-muted);
+  cursor: pointer;
+  font: 600 12px/1.2 inherit;
+}
+
+.BottomTab:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-title);
+}
+
+.BottomTab--active {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-title);
+  position: relative;
+  top: 1px;
+}
+
+.BottomTabPanel,
+.BottomTabPanel > [role='tabpanel'] {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.BottomTabPanel--log {
+  flex: 0 0 220px;
+  height: 220px;
 }
 
 .AppCell--middle {
@@ -86,9 +141,10 @@
 
 section > h2,
 .AstTreeHeader > h2,
-.CodeviewTitle {
+.CodeviewTitle,
+.LogPanelHeader h2 {
   margin: 0;
-  color: var(--color-primary-strong);
+  color: var(--color-title);
   font-size: 15px;
   font-weight: 700;
   line-height: 1.2;
@@ -96,7 +152,67 @@ section > h2,
   text-transform: uppercase;
 }
 
-section[aria-label='File tree'] {
+.LogPanel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.LogPanelHeader {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.LogPanelHeader span {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.LogPanelBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-soft);
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.LogPanelEmpty {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+}
+
+.LogPanelEntry {
+  color: var(--color-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.LogPanelEntry + .LogPanelEntry {
+  margin-top: 6px;
+}
+
+.LogPanelEntry--error {
+  color: var(--color-danger);
+  font-weight: 700;
+}
+
+section[aria-label='Files'] {
   height: 100%;
   min-height: 0;
   display: flex;
@@ -382,8 +498,8 @@ section[aria-label='File tree'] {
   gap: 5px;
   border: 1px solid rgba(64, 82, 137, 0.12);
   border-radius: 8px;
-  background: #f0f2f6;
-  color: #8a92a7;
+  background: var(--color-chip-bg);
+  color: var(--color-chip-text);
   padding: 6px 9px;
   cursor: pointer;
   font: 12px/1.15 inherit;
@@ -392,7 +508,7 @@ section[aria-label='File tree'] {
 
 .AstTreeOptionCard:hover {
   border-color: rgba(64, 82, 137, 0.2);
-  color: #64708b;
+  color: var(--color-text-muted);
 }
 
 .AstTreeOptionCard--selected {
@@ -559,7 +675,7 @@ section[aria-label='File tree'] {
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  background: #eef3ff;
+  background: var(--color-icon-bg);
   color: var(--color-primary-strong);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -569,20 +685,25 @@ section[aria-label='File tree'] {
 }
 
 .AstTreeIcon--text {
-  background: #f3f6fb;
-  color: #53617f;
+  background: var(--color-icon-muted-bg);
+  color: var(--color-icon-muted-text);
+}
+
+.AstTreeIcon--command {
+  background: var(--color-icon-command-bg);
+  color: var(--color-icon-command-text);
 }
 
 .AstTreeIcon--comment {
-  background: #eef9f2;
-  color: #277448;
+  background: var(--color-icon-success-bg);
+  color: var(--color-icon-success-text);
 }
 
 .AstTreeIcon--if,
 .AstTreeIcon--else,
 .AstTreeIcon--condition {
-  background: #fff5df;
-  color: #9a5a00;
+  background: var(--color-icon-warning-bg);
+  color: var(--color-icon-warning-text);
 }
 
 .AstTreeType {
@@ -614,7 +735,7 @@ section[aria-label='File tree'] {
 .AstTreeLine {
   flex: 0 0 auto;
   font-size: 11px;
-  color: #7a86a6;
+  color: var(--color-line-meta);
 }
 
 .AstTreeChildren {
@@ -672,7 +793,7 @@ section[aria-label='File tree'] {
 }
 
 .FiletreeUpload {
-  width: 100%;
+  flex: 1 1 0;
   text-align: left;
 }
 
@@ -704,17 +825,68 @@ section[aria-label='File tree'] {
 
 .FiletreeAction {
   flex: 0 0 auto;
-  padding: 6px 8px;
-  font-size: 12px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-primary-strong);
+  font-size: 0;
+  line-height: 1;
+  font-family: var(--font-ui);
+  font-weight: 700;
+}
+
+.FiletreeAction:hover {
+  background: transparent;
+  color: var(--color-primary);
+}
+
+.FiletreeAction::before {
+  content: "\2193";
+  font-size: 17px;
 }
 
 .FiletreeAction--remove {
   color: var(--color-danger);
 }
 
+.FiletreeAction--remove:hover {
+  color: var(--color-danger);
+}
+
+.FiletreeAction--remove::before {
+  content: "\00d7";
+  font-size: 18px;
+}
+
 .FiletreeActions {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 6px;
   margin-bottom: 8px;
+}
+
+@media (max-width: 900px) {
+  .App {
+    --bottom-panel-height: 420px;
+    grid-template-columns: minmax(180px, 280px) minmax(0, 1fr)
+      var(--ast-pane-col, minmax(180px, 280px));
+  }
+
+  .AppCell--leftBottom {
+    padding-top: 8px;
+    padding-bottom: 8px;
+    gap: 6px;
+  }
+
+  .BottomTab {
+    height: 26px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
 }

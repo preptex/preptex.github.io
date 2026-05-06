@@ -139,7 +139,7 @@ function TreeNode({ node, depth, selected, onSelect, onDownload, onRemove }: Tre
               onDownload(node.path);
             }}
           >
-            Download
+            <span aria-hidden="true">↓</span>
           </button>
         ) : null}
 
@@ -155,7 +155,7 @@ function TreeNode({ node, depth, selected, onSelect, onDownload, onRemove }: Tre
               onRemove(node.path);
             }}
           >
-            Remove
+            <span aria-hidden="true">❌</span>
           </button>
         ) : null}
       </div>
@@ -216,8 +216,8 @@ export default function Filetree({
   };
 
   return (
-    <section aria-label="File tree">
-      <h2>Filetree</h2>
+    <section aria-label="Files">
+      <h2>Files</h2>
       {onUploadFiles ? (
         <div className="FiletreeActions">
           <button type="button" className="ControlItem FiletreeUpload" onClick={triggerPicker}>

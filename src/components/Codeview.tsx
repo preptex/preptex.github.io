@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { EditorState } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { EditorView, lineNumbers } from '@codemirror/view';
 
 export type CodeviewProps = {
   filename?: string;
@@ -21,7 +21,7 @@ export default function CodeMirrorView({ filename, code, jumpToLine, jumpToken }
 
     const state = EditorState.create({
       doc: code,
-      extensions: [EditorView.editable.of(false)],
+      extensions: [lineNumbers(), EditorView.editable.of(false)],
     });
 
     viewRef.current = new EditorView({

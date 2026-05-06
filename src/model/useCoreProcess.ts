@@ -12,6 +12,7 @@ import type { CoreOptionsUI } from './useControl';
 import type { FilesMutation } from './useFiles';
 export type CoreRunResult = {
   declaredConditions: string[];
+  notes: string[];
   error?: string;
 };
 
@@ -26,6 +27,19 @@ const DEFAULT_TOKENS = new Set<TokenType>([
   TokenType.Input,
   TokenType.Comment,
 ]);
+
+function collectProjectNotes(project: CoreProject | null): string[] {
+  if (!project) return [];
+
+  const lines: string[] = [];
+  for (const [file, projectFile] of Object.entries(project.getFiles())) {
+    const notes = (projectFile as { notes?: ReadonlyArray<string> }).notes ?? [];
+    for (const note of notes) {
+      lines.push(`[${file}] ${note}`);
+    }
+  }
+  return lines;
+}
 
 export function useCoreProcess(entryFile: string, mutation: FilesMutation, options: CoreOptionsUI) {
   const [result, setResult] = useState<CoreRunResult | null>(null);
@@ -88,11 +102,12 @@ export function useCoreProcess(entryFile: string, mutation: FilesMutation, optio
           : batchProject;
       }
 
-      const declared = Array.from(globalProjectRef.current?.getDeclaredConditions() ?? []);
-      setResult({ declaredConditions: declared });
+      const project = globalProjectRef.current;
+      const declared = Array.from(project?.getDeclaredConditions() ?? []);
+      setResult({ declaredConditions: declared, notes: collectProjectNotes(project) });
       setProjectVersion((v) => v + 1);
     } catch (err) {
-      setResult({ declaredConditions: [], error: String(err) });
+      setResult({ declaredConditions: [], notes: [], error: String(err) });
       console.log(err);
     }
   }, [mutationId, upserts, removes, normalizeText]);
@@ -104,8 +119,13 @@ export function useCoreProcess(entryFile: string, mutation: FilesMutation, optio
       return;
     }
 
-    const declared = Array.from(globalProjectRef.current?.getDeclaredConditions() ?? []);
-    setResult((prev) => ({ declaredConditions: declared, error: prev?.error }));
+    const project = globalProjectRef.current;
+    const declared = Array.from(project?.getDeclaredConditions() ?? []);
+    setResult((prev) => ({
+      declaredConditions: declared,
+      notes: collectProjectNotes(project),
+      error: prev?.error,
+    }));
   }, [entryFile]);
 
   const transform = useCallback(
@@ -120,6 +140,7 @@ export function useCoreProcess(entryFile: string, mutation: FilesMutation, optio
         if (!project) return null;
         setResult((prev) => ({
           declaredConditions: prev?.declaredConditions ?? [],
+          notes: prev?.notes ?? [],
           error: undefined,
         }));
         const outputs = coreTransform(entry, project, coreOptions);
@@ -128,6 +149,7 @@ export function useCoreProcess(entryFile: string, mutation: FilesMutation, optio
         const message = err instanceof Error ? err.message : String(err);
         setResult((prev) => ({
           declaredConditions: prev?.declaredConditions ?? [],
+          notes: prev?.notes ?? [],
           error: message,
         }));
         console.log(err);
