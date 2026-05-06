@@ -13,10 +13,27 @@
   --color-border-strong: rgba(76, 93, 146, 0.26);
   --color-text: #0e1833;
   --color-text-muted: #566385;
-  --color-primary: #4338f5;
-  --color-primary-strong: #2438ff;
-  --color-primary-start: #533cf5;
-  --color-primary-soft: #f5f4ff;
+  --color-primary: #3f7fc4;
+  --color-primary-strong: #2f68a5;
+  --color-primary-start: #5b9cda;
+  --color-primary-soft: #eef6ff;
+  --color-title: #4f82b8;
+  --color-title-muted: #6f94bc;
+  --color-action: #2f68a5;
+  --color-action-soft: #edf6ff;
+  --color-action-border: rgba(47, 104, 165, 0.32);
+  --color-chip-bg: #f1f5fb;
+  --color-chip-text: #6f7d99;
+  --color-icon-bg: #eef6ff;
+  --color-icon-muted-bg: #f3f6fb;
+  --color-icon-muted-text: #53617f;
+  --color-icon-command-bg: #f1f2f4;
+  --color-icon-command-text: #4f5663;
+  --color-icon-success-bg: #eef9f2;
+  --color-icon-success-text: #277448;
+  --color-icon-warning-bg: #fff5df;
+  --color-icon-warning-text: #9a5a00;
+  --color-line-meta: #7a86a6;
   --color-on-primary: #ffffff;
   --color-danger: #8b1f1f;
   --shadow-panel: 0 12px 32px rgba(70, 86, 130, 0.08);
@@ -24,13 +41,26 @@
   --radius-control: 7px;
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 code {

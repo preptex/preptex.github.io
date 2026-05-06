@@ -47,128 +47,131 @@ export default function ControlPanel({
 
   return (
     <section className="ControlPanel" aria-label="Control panel">
-      <div className="ControlPanelHeader">
-        <div>
-          <h2>Control Panel</h2>
-          <p>Configure the transformation pipeline and run it on your project.</p>
-        </div>
-
-        {onTransform ? (
-          <button
-            type="button"
-            className="ControlButton"
-            onClick={onTransform}
-            disabled={!entryFile}
-            title={entryFile ? `Transform ${entryFile}` : 'Select a file first'}
-          >
-            Run Pipeline
-          </button>
-        ) : null}
-      </div>
-
       <div className="ControlPanelBody">
-        <div className="ControlGroup ControlGroup--entry">
-          <h3>Entry &amp; Output</h3>
-          <div className="ControlFieldGrid">
-            <label className="ControlField" htmlFor="entryFile">
-              <span>Entry file</span>
-              <input
-                id="entryFile"
-                className="ControlInput"
-                type="text"
-                value={entryFile || 'No file selected'}
-                readOnly
-              />
-            </label>
+        <div className="ControlColumn ControlColumn--left">
+          <div className="ControlGroup ControlGroup--entry">
+            <h3>Entry &amp; Output</h3>
+            <div className="ControlFieldGrid">
+              <label className="ControlField" htmlFor="entryFile">
+                <span>Entry file</span>
+                <input
+                  id="entryFile"
+                  className="ControlInput"
+                  type="text"
+                  value={entryFile || 'No file selected'}
+                  readOnly
+                />
+              </label>
 
-            <label className="ControlField" htmlFor="outputName">
-              <span>Output file name</span>
-              <input
-                id="outputName"
-                className="ControlInput"
-                type="text"
-                placeholder={outputPreview || 'main.processed.tex'}
-                value={options.outputName}
-                onChange={(e) => onChange({ ...options, outputName: e.target.value })}
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="ControlGroup">
-          <h3>Input Command</h3>
-          <label className="ControlField" htmlFor="handleInputCmd">
-            <span>Input command</span>
-            <select
-              id="handleInputCmd"
-              className="ControlInput"
-              value={options.handleInputCmd}
-              onChange={(e) =>
-                onChange({ ...options, handleInputCmd: e.target.value as InputCmdHandlingUI })
-              }
-            >
-              <option value="none">none</option>
-              <option value="flatten">flatten</option>
-              <option value="recursive">recursive</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="ControlGroup ControlGroup--compact">
-          <h3>Comments</h3>
-          <label className="ControlCheck">
-            <input
-              type="checkbox"
-              checked={options.suppressComments}
-              onChange={toggleSuppressComments}
-            />
-            <span>Suppress comments</span>
-          </label>
-        </div>
-
-        <div className="ControlGroup ControlGroup--conditions">
-          <div className="ControlConditionsHeader">
-            <div>
-              <h3>Conditions</h3>
-              <p>Select the conditions to include in the transformation.</p>
+              <label className="ControlField" htmlFor="outputName">
+                <span>Output file name</span>
+                <input
+                  id="outputName"
+                  className="ControlInput"
+                  type="text"
+                  placeholder={outputPreview || 'main.processed.tex'}
+                  value={options.outputName}
+                  onChange={(e) => onChange({ ...options, outputName: e.target.value })}
+                />
+              </label>
             </div>
-            <label className="ControlSwitch">
-              <input
-                type="checkbox"
-                checked={options.handleIfConditions}
-                onChange={toggleHandleIfConditions}
-              />
-              <span>Enable</span>
-            </label>
           </div>
 
-          <ul className="ConditionsList" role="listbox" aria-label="Available if conditions">
-            {availableIfConditions.length === 0 ? (
-              <li className="ControlEmpty">No conditions found</li>
-            ) : (
-              availableIfConditions.map((cond) => {
-                const selected = options.ifDecisions.includes(cond);
-                return (
-                  <li key={cond}>
-                    <button
-                      type="button"
-                      className={
-                        selected
-                          ? 'ConditionItem ConditionItem--selected'
-                          : 'ConditionItem'
-                      }
-                      aria-pressed={selected}
-                      disabled={!options.handleIfConditions}
-                      onClick={() => toggleCondition(cond)}
-                    >
-                      <span className="ConditionBox" aria-hidden="true" />
-                      <span>{cond}</span>
-                    </button>
-                  </li>
-                );
-              })
-            )}
-          </ul>
+          <div className="ControlGroup ControlGroup--processing">
+            <h3>Basic Options</h3>
+            <div className="ControlSubgroup">
+              <h4>Input Command</h4>
+              <p className="ControlSubtitle">
+                Handle <code>\input</code> command
+              </p>
+              <label className="ControlField" htmlFor="handleInputCmd">
+                <select
+                  id="handleInputCmd"
+                  className="ControlInput"
+                  value={options.handleInputCmd}
+                  onChange={(e) =>
+                    onChange({ ...options, handleInputCmd: e.target.value as InputCmdHandlingUI })
+                  }
+                >
+                  <option value="none">none</option>
+                  <option value="flatten">flatten</option>
+                  <option value="recursive">recursive</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="ControlSubgroup">
+              <h4>Comments</h4>
+              <label className="ControlCheck">
+                <input
+                  type="checkbox"
+                  checked={options.suppressComments}
+                  onChange={toggleSuppressComments}
+                />
+                <span>Suppress comments</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div className="ControlColumn ControlColumn--right">
+          <div className="ControlGroup ControlGroup--conditions">
+            <div className="ControlConditionsHeader">
+              <h3>Conditions</h3>
+              <label className="ControlSwitch">
+                <input
+                  type="checkbox"
+                  checked={options.handleIfConditions}
+                  onChange={toggleHandleIfConditions}
+                />
+                <span>Enable</span>
+              </label>
+              <p>Select the conditions to include.</p>
+            </div>
+
+            <ul className="ConditionsList" role="listbox" aria-label="Available if conditions">
+              {availableIfConditions.length === 0 ? (
+                <li className="ControlEmpty">No conditions found</li>
+              ) : (
+                availableIfConditions.map((cond) => {
+                  const selected = options.ifDecisions.includes(cond);
+                  return (
+                    <li key={cond}>
+                      <button
+                        type="button"
+                        className={
+                          selected
+                            ? 'ConditionItem ConditionItem--selected'
+                            : 'ConditionItem'
+                        }
+                        aria-pressed={selected}
+                        disabled={!options.handleIfConditions}
+                        onClick={() => toggleCondition(cond)}
+                      >
+                        <span className="ConditionBox" aria-hidden="true" />
+                        <span>{cond}</span>
+                      </button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </div>
+
+          <div className="ControlGroup ControlGroup--action">
+            <h3>Pipeline</h3>
+            {onTransform ? (
+              <button
+                type="button"
+                className="ControlButton"
+                onClick={onTransform}
+                disabled={!entryFile}
+                title={entryFile ? `Transform ${entryFile}` : 'Select a file first'}
+              >
+                Run
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
     </section>

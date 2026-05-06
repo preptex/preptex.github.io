@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import './App.css';
 
-import { ASTview, Codeview, ControlPanel, Filetree } from './components';
+import { ASTview, Codeview, ControlPanel, Filetree, LogPanel } from './components';
 import { useFiles } from './model/useFiles';
 import { useControl } from './model/useControl';
 import { useCoreProcess } from './model/useCoreProcess';
@@ -12,6 +12,7 @@ function App() {
 
   const [jumpToLine, setJumpToLine] = useState<number | undefined>(undefined);
   const [jumpToken, setJumpToken] = useState(0);
+  const [bottomTab, setBottomTab] = useState<'control' | 'log'>('control');
 
   const [astCollapsed, setAstCollapsed] = useState(false);
   const [astWidth, setAstWidth] = useState(320);
@@ -114,14 +115,46 @@ function App() {
       </div>
 
       <div className="AppCell AppCell--leftBottom">
-        <ControlPanel
-          options={options}
-          onChange={setOptions}
-          entryFile={selectedFile}
-          availableIfConditions={coreRun?.declaredConditions ?? []}
-          onTransform={onTransform}
-        />
-        {coreRun?.error ? <div className="PaneMeta">{coreRun.error}</div> : null}
+        <div className="BottomTabs" role="tablist" aria-label="Bottom panel">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={bottomTab === 'control'}
+            aria-controls="bottom-panel-control"
+            className={bottomTab === 'control' ? 'BottomTab BottomTab--active' : 'BottomTab'}
+            onClick={() => setBottomTab('control')}
+          >
+            Control Panel
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={bottomTab === 'log'}
+            aria-controls="bottom-panel-log"
+            className={bottomTab === 'log' ? 'BottomTab BottomTab--active' : 'BottomTab'}
+            onClick={() => setBottomTab('log')}
+          >
+            Log
+          </button>
+        </div>
+
+        <div className={`BottomTabPanel BottomTabPanel--${bottomTab}`}>
+          {bottomTab === 'control' ? (
+            <div id="bottom-panel-control" role="tabpanel" aria-label="Control Panel">
+              <ControlPanel
+                options={options}
+                onChange={setOptions}
+                entryFile={selectedFile}
+                availableIfConditions={coreRun?.declaredConditions ?? []}
+                onTransform={onTransform}
+              />
+            </div>
+          ) : (
+            <div id="bottom-panel-log" role="tabpanel" aria-label="Log">
+              <LogPanel notes={coreRun?.notes ?? []} error={coreRun?.error} />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="AppCell AppCell--middle">
