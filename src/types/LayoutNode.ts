@@ -14,6 +14,10 @@ export interface LayoutNode {
   label?: string;
   /** Secondary label line (optional). */
   sublabel?: string;
+  /** LaTeX section nesting level, where 0 is document and 5 is subparagraph. */
+  sectionLevel?: number;
+  /** True when the source command or section used the starred form. */
+  isStarred?: boolean;
   id: number;
   strokeWidth: number;
   strokeColor?: string;

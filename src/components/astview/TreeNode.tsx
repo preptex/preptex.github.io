@@ -11,17 +11,46 @@ function clamp(value = '', max = 64): string {
 }
 
 function getDisplayData(node: LayoutNode): string {
-  return clamp(node.data || node.label || '');
+  return clamp(node.data || '');
 }
 
 function getNodeLine(node: LayoutNode): string {
   return typeof node.line === 'number' && Number.isFinite(node.line) ? `: l${node.line}` : '';
 }
 
+function getSectionLevelName(level?: number): string {
+  switch (level) {
+    case 0:
+      return 'document';
+    case 1:
+      return 'section';
+    case 2:
+      return 'subsection';
+    case 3:
+      return 'subsubsection';
+    case 4:
+      return 'paragraph';
+    case 5:
+      return 'subparagraph';
+    default:
+      return 'section';
+  }
+}
+
+function getDisplayType(node: LayoutNode): string {
+  if (node.kind === 'section') return getSectionLevelName(node.sectionLevel);
+  return node.kind;
+}
+
+function getStarLabel(node: LayoutNode): string {
+  return node.kind === 'command' ? 'Starred command' : 'Starred section';
+}
+
 export default function TreeNode({ node, onSelectNode }: TreeNodeProps) {
   const [open, setOpen] = useState(true);
   const isFolder = Boolean(node.children?.length);
   const displayData = getDisplayData(node);
+  const displayType = getDisplayType(node);
 
   return (
     <div
@@ -57,7 +86,14 @@ export default function TreeNode({ node, onSelectNode }: TreeNodeProps) {
           <span className={`AstTreeIcon AstTreeIcon--${node.kind}`} aria-hidden="true">
             {node.icon}
           </span>
-          <span className="AstTreeType">{node.kind}</span>
+          <span className="AstTreeType">
+            {displayType}
+            {node.isStarred ? (
+              <span className="AstTreeTypeStar" aria-label={getStarLabel(node)}>
+                *
+              </span>
+            ) : null}
+          </span>
           {displayData ? <span className="AstTreeData">{displayData}</span> : null}
           <span className="AstTreeLine">{getNodeLine(node)}</span>
         </button>
