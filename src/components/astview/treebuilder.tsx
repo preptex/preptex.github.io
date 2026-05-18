@@ -23,6 +23,25 @@ function sectionStrokeWidth(node?: AstNode): { strokeWidth: number; strokeColor?
   return { strokeWidth: 1 };
 }
 
+function getSectionLevelName(level: number): string {
+  switch (level) {
+    case 0:
+      return 'document';
+    case 1:
+      return 'section';
+    case 2:
+      return 'subsection';
+    case 3:
+      return 'subsubsection';
+    case 4:
+      return 'paragraph';
+    case 5:
+      return 'subparagraph';
+    default:
+      return 'section';
+  }
+}
+
 export class TreeLayoutBuilder {
   build(rootNode: AstNode): LayoutNode {
     return this.convert(rootNode);
@@ -47,6 +66,8 @@ export class TreeLayoutBuilder {
       y: 0,
       label: info.label,
       sublabel: info.sublabel,
+      sectionLevel: info.sectionLevel,
+      isStarred: info.isStarred,
       children,
     };
   }
@@ -58,6 +79,7 @@ export class TreeLayoutBuilder {
     label?: string;
     sublabel?: string;
     sectionLevel?: number;
+    isStarred?: boolean;
   } {
     switch (data.type) {
       case NodeType.Root:
@@ -92,13 +114,16 @@ export class TreeLayoutBuilder {
 
       case NodeType.Section: {
         const s = data as SectionNode;
+        const sectionName = getSectionLevelName(s.level);
+        const isDocumentSection = s.level === 0 && s.name === 'document';
         return {
           kind: 'section',
           icon: 'S',
-          data: s.name,
-          label: s.name || 'section',
-          sublabel: `section L${s.level}`,
+          data: isDocumentSection ? undefined : s.name,
+          label: isDocumentSection ? sectionName : s.name || 'section',
+          sublabel: isDocumentSection ? undefined : `${sectionName}${s.is_starred ? '*' : ''}`,
           sectionLevel: s.level,
+          isStarred: Boolean(s.is_starred),
         };
       }
 
@@ -119,8 +144,9 @@ export class TreeLayoutBuilder {
           kind: 'command',
           icon: '\\',
           data: c.name,
-          label: `\\${c.name}`,
-          sublabel: 'command',
+          label: `\\${c.name}${c.is_starred ? '*' : ''}`,
+          sublabel: `command${c.is_starred ? '*' : ''}`,
+          isStarred: Boolean(c.is_starred),
         };
       }
 

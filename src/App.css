@@ -694,6 +694,11 @@ section[aria-label='Files'] {
   color: var(--color-icon-command-text);
 }
 
+.AstTreeIcon--section {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
 .AstTreeIcon--comment {
   background: var(--color-icon-success-bg);
   color: var(--color-icon-success-text);
@@ -708,6 +713,9 @@ section[aria-label='Files'] {
 
 .AstTreeType {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   color: var(--color-text);
   min-width: 0;
   overflow: hidden;
@@ -715,6 +723,15 @@ section[aria-label='Files'] {
   white-space: nowrap;
   font-weight: 600;
   text-transform: lowercase;
+}
+
+.AstTreeTypeStar {
+  flex: 0 0 auto;
+  color: var(--color-icon-warning-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .AstTreeData,
