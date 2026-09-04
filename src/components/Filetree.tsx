@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 export type FiletreeProps = {
-  files: string[];
+  files: readonly string[];
   selected?: string;
   onSelect: (filename: string) => void;
   onDownload?: (filename: string) => void;
   onRemove?: (filename: string) => void;
   onUploadFiles?: (files: FileList) => void;
+  uploadError?: string | null;
 };
 
 type FiletreeNode = {
@@ -50,7 +51,7 @@ function sortNodes(a: FiletreeNode, b: FiletreeNode): number {
   return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 }
 
-function buildFiletree(files: string[]): FiletreeNode[] {
+function buildFiletree(files: readonly string[]): FiletreeNode[] {
   const root: FiletreeNode = { name: '', path: '', type: 'folder', children: [] };
 
   for (const filename of files) {
@@ -184,6 +185,7 @@ export default function Filetree({
   onDownload,
   onRemove,
   onUploadFiles,
+  uploadError,
 }: FiletreeProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -218,6 +220,7 @@ export default function Filetree({
   return (
     <section aria-label="Files">
       <h2>Files</h2>
+      {uploadError ? <p role="alert">{uploadError}</p> : null}
       {onUploadFiles ? (
         <div className="FiletreeActions">
           <button type="button" className="ControlItem FiletreeUpload" onClick={triggerPicker}>
@@ -228,6 +231,7 @@ export default function Filetree({
           </button>
           <input
             ref={inputRef}
+            aria-label="Upload files"
             type="file"
             multiple
             onChange={onFilesChange}
@@ -235,6 +239,7 @@ export default function Filetree({
           />
           <input
             ref={folderInputRef}
+            aria-label="Upload folder"
             type="file"
             multiple
             onChange={onFilesChange}

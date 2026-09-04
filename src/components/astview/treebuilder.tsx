@@ -1,45 +1,37 @@
-import {
-  AstNode,
-  CommentNode,
-  CommandNode,
-  ConditionBranchNode,
-  ConditionDeclarationNode,
-  ConditionNode,
-  EnvironmentNode,
-  InputNode,
-  MathNode,
-  NodeType,
-  SectionNode,
-  TextNode,
-} from '@preptex/core';
-import { LayoutNode } from '../../types/LayoutNode';
+import { ConditionBranchKind, isContainerNode, NodeType } from '@preptex/core';
+import type { AstNode, SectionLevel } from '@preptex/core';
+import type { LayoutNode, LayoutNodeKind } from '../../types/LayoutNode';
 
-function sectionStrokeWidth(node?: AstNode): { strokeWidth: number; strokeColor?: string } {
-  if (!node || ![NodeType.Root, NodeType.Section].includes(node.type)) return { strokeWidth: 1 };
-  if (node.type === NodeType.Root || (node as SectionNode).level === 0) {
+interface NodeInfo {
+  readonly kind: LayoutNodeKind;
+  readonly icon: string;
+  readonly data?: string;
+  readonly label?: string;
+  readonly sublabel?: string;
+  readonly sectionLevel?: SectionLevel;
+  readonly isStarred?: boolean;
+}
+
+function sectionStrokeWidth(node: AstNode): { strokeWidth: number; strokeColor?: string } {
+  if (node.type === NodeType.Root || (node.type === NodeType.Section && node.level === 0)) {
     return { strokeWidth: 1.5, strokeColor: '#000' };
   }
-  if ((node as SectionNode).level <= 3) return { strokeWidth: 1.5, strokeColor: '#AAAAAAff' };
+  if (node.type === NodeType.Section && node.level <= 3) {
+    return { strokeWidth: 1.5, strokeColor: '#AAAAAAff' };
+  }
   return { strokeWidth: 1 };
 }
 
-function getSectionLevelName(level: number): string {
-  switch (level) {
-    case 0:
-      return 'document';
-    case 1:
-      return 'section';
-    case 2:
-      return 'subsection';
-    case 3:
-      return 'subsubsection';
-    case 4:
-      return 'paragraph';
-    case 5:
-      return 'subparagraph';
-    default:
-      return 'section';
-  }
+function getSectionLevelName(level: SectionLevel): string {
+  const names: Record<SectionLevel, string> = {
+    0: 'document', 1: 'section', 2: 'subsection',
+    3: 'subsubsection', 4: 'paragraph', 5: 'subparagraph',
+  };
+  return names[level];
+}
+
+function assertNever(node: never): never {
+  throw new Error('Unsupported PrepTeX AST node.');
 }
 
 export class TreeLayoutBuilder {
@@ -48,176 +40,67 @@ export class TreeLayoutBuilder {
   }
 
   private convert(node: AstNode): LayoutNode {
-    const info = this.getNodeInfo(node);
-    const strokeInfo = sectionStrokeWidth(node);
-    const children = Array.isArray((node as any).children)
-      ? ((node as any).children as AstNode[]).map((child) => this.convert(child))
-      : [];
-
     return {
-      ...strokeInfo,
+      ...sectionStrokeWidth(node),
+      ...this.getNodeInfo(node),
       id: node.id,
       type: node.type,
-      kind: info.kind,
-      data: info.data,
       line: node.line,
-      icon: info.icon,
       x: 0,
       y: 0,
-      label: info.label,
-      sublabel: info.sublabel,
-      sectionLevel: info.sectionLevel,
-      isStarred: info.isStarred,
-      children,
+      children: isContainerNode(node) ? node.children.map((child) => this.convert(child)) : [],
     };
   }
 
-  private getNodeInfo(data: AstNode): {
-    kind: string;
-    icon: string;
-    data?: string;
-    label?: string;
-    sublabel?: string;
-    sectionLevel?: number;
-    isStarred?: boolean;
-  } {
-    switch (data.type) {
+  private getNodeInfo(node: AstNode): NodeInfo {
+    switch (node.type) {
       case NodeType.Root:
-        return {
-          kind: 'root',
-          icon: 'R',
-          label: 'Root',
-          sublabel: 'document',
-        };
-
-      case NodeType.Text: {
-        const t = data as TextNode;
-        return {
-          kind: 'text',
-          icon: 'T',
-          data: t.value.trim(),
-          label: t.value.trim(),
-          sublabel: 'text',
-        };
-      }
-
-      case NodeType.Comment: {
-        const c = data as CommentNode;
-        return {
-          kind: 'comment',
-          icon: '%',
-          data: c.value.trim(),
-          label: c.value.trim(),
-          sublabel: 'comment',
-        };
-      }
-
+        return { kind: 'root', icon: 'R', label: 'Root', sublabel: 'document' };
+      case NodeType.Text:
+        return { kind: 'text', icon: 'T', data: node.value.trim(), label: node.value.trim(), sublabel: 'text' };
+      case NodeType.NewLine:
+        return { kind: 'newline', icon: '↵', label: 'newline' };
+      case NodeType.Comment:
+        return { kind: 'comment', icon: '%', data: node.value.trim(), label: node.value.trim(), sublabel: 'comment' };
       case NodeType.Section: {
-        const s = data as SectionNode;
-        const sectionName = getSectionLevelName(s.level);
-        const isDocumentSection = s.level === 0 && s.name === 'document';
+        const sectionName = getSectionLevelName(node.level);
+        const isDocument = node.level === 0 && node.name === 'document';
         return {
           kind: 'section',
           icon: 'S',
-          data: isDocumentSection ? undefined : s.name,
-          label: isDocumentSection ? sectionName : s.name || 'section',
-          sublabel: isDocumentSection ? undefined : `${sectionName}${s.is_starred ? '*' : ''}`,
-          sectionLevel: s.level,
-          isStarred: Boolean(s.is_starred),
+          data: isDocument ? undefined : node.name,
+          label: isDocument ? sectionName : node.name || 'section',
+          sublabel: isDocument ? undefined : sectionName + (node.starred ? '*' : ''),
+          sectionLevel: node.level,
+          isStarred: node.starred,
         };
       }
-
-      case NodeType.Environment: {
-        const e = data as EnvironmentNode;
+      case NodeType.Environment:
+        return { kind: 'environment', icon: 'E', data: node.name, label: node.name || 'env', sublabel: 'environment' };
+      case NodeType.Command:
         return {
-          kind: 'environment',
-          icon: 'E',
-          data: e.name,
-          label: e.name || 'env',
-          sublabel: 'environment',
+          kind: 'command', icon: '\\', data: node.name,
+          label: '\\' + node.name + (node.starred ? '*' : ''),
+          sublabel: 'command' + (node.starred ? '*' : ''), isStarred: node.starred,
         };
-      }
-
-      case NodeType.Command: {
-        const c = data as CommandNode;
+      case NodeType.Condition:
+        return { kind: 'condition', icon: '?', data: node.name, label: node.name, sublabel: 'if' };
+      case NodeType.ConditionBranch:
         return {
-          kind: 'command',
-          icon: '\\',
-          data: c.name,
-          label: `\\${c.name}${c.is_starred ? '*' : ''}`,
-          sublabel: `command${c.is_starred ? '*' : ''}`,
-          isStarred: Boolean(c.is_starred),
+          kind: node.branch === ConditionBranchKind.If ? 'if' : 'else',
+          icon: node.branch === ConditionBranchKind.If ? 'I' : 'L',
+          data: node.name, label: node.branch, sublabel: node.name,
         };
-      }
-
-      case NodeType.Condition: {
-        const c = data as ConditionNode;
-        return {
-          kind: 'condition',
-          icon: '?',
-          data: c.name,
-          label: c.name,
-          sublabel: 'if',
-        };
-      }
-
-      case NodeType.ConditionBranch: {
-        const b = data as ConditionBranchNode;
-        return {
-          kind: b.branch.toLowerCase(),
-          icon: b.branch === 'If' ? 'I' : 'L',
-          data: b.name,
-          label: b.branch,
-          sublabel: b.name,
-        };
-      }
-
-      case NodeType.ConditionDeclaration: {
-        const d = data as ConditionDeclarationNode;
-        return {
-          kind: 'condition',
-          icon: 'D',
-          data: d.name || d.value,
-          label: d.name,
-          sublabel: 'declare',
-        };
-      }
-
-      case NodeType.Math: {
-        const m = data as MathNode;
-        return {
-          kind: 'math',
-          icon: 'M',
-          data: m.delim,
-          label: m.delim,
-          sublabel: 'math',
-        };
-      }
-
+      case NodeType.ConditionDeclaration:
+        return { kind: 'condition', icon: 'D', data: node.name || node.value, label: node.name, sublabel: 'declare' };
+      case NodeType.Math:
+        return { kind: 'math', icon: 'M', data: node.delimiter, label: node.delimiter, sublabel: 'math' };
       case NodeType.Group:
-        return {
-          kind: 'group',
-          icon: '{',
-          label: 'group',
-          sublabel: 'group',
-        };
-
-      case NodeType.Input: {
-        const i = data as InputNode;
-        return {
-          kind: 'input',
-          icon: '@',
-          data: i.path || i.value,
-          label: i.path || i.value,
-          sublabel: 'input',
-        };
-      }
-
+        return { kind: 'group', icon: '{', label: 'group', sublabel: 'group' };
+      case NodeType.Input:
+        return { kind: 'input', icon: '@', data: node.path, label: node.path, sublabel: 'input' };
       default:
-        return {
-          kind: String(data.type).toLowerCase(),
-          icon: '*',
-        };
+        return assertNever(node);
     }
   }
 }

@@ -1,25 +1,32 @@
+import type { NodeId, NodeType, SectionLevel } from '@preptex/core';
+
+export const LAYOUT_NODE_KINDS = [
+  'root', 'section', 'environment', 'condition', 'if', 'else', 'text',
+  'newline', 'comment', 'command', 'math', 'group', 'input',
+] as const;
+
+export type LayoutNodeKind = typeof LAYOUT_NODE_KINDS[number];
+
+export function isLayoutNodeKind(value: string): value is LayoutNodeKind {
+  return LAYOUT_NODE_KINDS.some((kind) => kind === value);
+}
+
+/** Website display data; never attach layout or UI state to the core AST. */
 export interface LayoutNode {
-  type: string;
-  /** Normalized display type, e.g. section, text, if, else. */
-  kind: string;
-  /** Normalized node payload displayed after the type. */
-  data?: string;
-  /** 1-based source line number. */
-  line?: number;
-  /** Small temporary visual marker for the node type. */
-  icon: string;
-  x: number;
-  y: number;
-  /** Primary label to display inside the node (e.g. section/env name). */
-  label?: string;
-  /** Secondary label line (optional). */
-  sublabel?: string;
-  /** LaTeX section nesting level, where 0 is document and 5 is subparagraph. */
-  sectionLevel?: number;
-  /** True when the source command or section used the starred form. */
-  isStarred?: boolean;
-  id: number;
-  strokeWidth: number;
-  strokeColor?: string;
-  children?: LayoutNode[];
+  readonly type: NodeType;
+  readonly kind: LayoutNodeKind;
+  readonly data?: string;
+  /** One-based source line in the selected input file. */
+  readonly line: number;
+  readonly icon: string;
+  readonly x: number;
+  readonly y: number;
+  readonly label?: string;
+  readonly sublabel?: string;
+  readonly sectionLevel?: SectionLevel;
+  readonly isStarred?: boolean;
+  readonly id: NodeId;
+  readonly strokeWidth: number;
+  readonly strokeColor?: string;
+  readonly children: readonly LayoutNode[];
 }

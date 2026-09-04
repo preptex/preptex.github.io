@@ -1,4 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
+import type { TransformedFile } from '@preptex/core';
+import type { FilesMap } from './types/files';
 import './App.css';
 
 import { ASTview, Codeview, ControlPanel, Filetree, LogPanel } from './components';
@@ -8,8 +10,6 @@ import { useCoreProcess } from './model/useCoreProcess';
 import { TreeLayoutBuilder } from './components/astview/treebuilder';
 
 function App() {
-  const seedFiles = useMemo<Record<string, string>>(() => ({}), []);
-
   const [jumpToLine, setJumpToLine] = useState<number | undefined>(undefined);
   const [jumpToken, setJumpToken] = useState(0);
   const [bottomTab, setBottomTab] = useState<'control' | 'log'>('control');
@@ -24,11 +24,11 @@ function App() {
     fileNames,
     selectedFile,
     selectFile,
-    mutation,
+    uploadError,
     upsertFiles,
     upsertTextFiles,
     removeFile,
-  } = useFiles(seedFiles);
+  } = useFiles();
 
   const { options, setOptions } = useControl();
 
@@ -38,15 +38,14 @@ function App() {
     result: coreRun,
     transform,
     project,
-    projectVersion,
-  } = useCoreProcess(selectedFile, mutation, options);
+    canTransform,
+  } = useCoreProcess(selectedFile, filesByName, options);
 
   const rootNode = useMemo(() => {
-    void projectVersion;
-    const astRoot = project?.getRoots()?.[selectedFile];
+    const astRoot = project?.files.find((file) => file.path === selectedFile)?.root;
     if (!astRoot) return null;
     return new TreeLayoutBuilder().build(astRoot);
-  }, [projectVersion, selectedFile, project]);
+  }, [selectedFile, project]);
 
   const onDownload = (name: string) => {
     const text = filesByName[name] ?? '';
@@ -60,33 +59,36 @@ function App() {
   };
 
   const normalizeOutputName = (raw: string): string => {
-    const trimmed = String(raw ?? '').trim();
+    const trimmed = raw.trim();
     if (!trimmed) return '';
     // If user provided an extension, respect it. Otherwise default to .processed.tex
     const hasExt = /\.[^./\\]+$/.test(trimmed);
     return hasExt ? trimmed : `${trimmed}.processed.tex`;
   };
 
-  const writeOutputsToTree = (outputs: Record<string, string>) => {
-    const next: Record<string, string> = {};
+  const writeOutputsToTree = (outputs: readonly TransformedFile[]) => {
     const overrideName = normalizeOutputName(options.outputName);
-    let firstOutputName = '';
-    for (const [name, text] of Object.entries(outputs)) {
+    let entryOutputName = '';
+    const entries = outputs.map(({ path: name, source }) => {
       const isEntry = name === selectedFile;
       const newname =
         overrideName && isEntry ? overrideName : name.replace(/\.tex$/i, '') + '.processed.tex';
-      next[newname] = text;
-      if (!firstOutputName) firstOutputName = newname;
-    }
+      if (isEntry) entryOutputName = newname;
+      return [newname, source] as const;
+    });
+    const next: FilesMap = Object.fromEntries(entries);
     upsertTextFiles(next);
-    if (firstOutputName) {
-      selectFile(firstOutputName);
+    if (entryOutputName) {
+      selectFile(entryOutputName);
     }
   };
 
   const onTransform = () => {
-    const outputs = transform(selectedFile);
-    if (!outputs) return;
+    const outputs = transform();
+    if (!outputs) {
+      setBottomTab('log');
+      return;
+    }
     writeOutputsToTree(outputs);
   };
 
@@ -101,8 +103,12 @@ function App() {
     removeFile(name);
   };
 
+  const appStyle: React.CSSProperties & { '--ast-pane-col': string } = {
+    '--ast-pane-col': astPaneCol,
+  };
+
   return (
-    <div className="App" style={{ ['--ast-pane-col' as any]: astPaneCol }}>
+    <div className="App" style={appStyle}>
       <div className="AppCell AppCell--leftTop">
         <Filetree
           files={fileNames}
@@ -110,7 +116,8 @@ function App() {
           onSelect={onSelectFile}
           onDownload={onDownload}
           onRemove={onRemove}
-          onUploadFiles={(fl) => upsertFiles(fl)}
+          onUploadFiles={(fl) => { void upsertFiles(fl); }}
+          uploadError={uploadError}
         />
       </div>
 
@@ -134,7 +141,7 @@ function App() {
             className={bottomTab === 'log' ? 'BottomTab BottomTab--active' : 'BottomTab'}
             onClick={() => setBottomTab('log')}
           >
-            Log
+            Log{coreRun.error ? ' (error)' : coreRun.diagnostics.length ? ` (${coreRun.diagnostics.length})` : ''}
           </button>
         </div>
 
@@ -145,13 +152,14 @@ function App() {
                 options={options}
                 onChange={setOptions}
                 entryFile={selectedFile}
-                availableIfConditions={coreRun?.declaredConditions ?? []}
+                availableIfConditions={coreRun.declaredConditions}
                 onTransform={onTransform}
+                canTransform={canTransform}
               />
             </div>
           ) : (
             <div id="bottom-panel-log" role="tabpanel" aria-label="Log">
-              <LogPanel notes={coreRun?.notes ?? []} error={coreRun?.error} />
+              <LogPanel diagnostics={coreRun.diagnostics} error={coreRun.error} />
             </div>
           )}
         </div>
@@ -181,7 +189,7 @@ function App() {
               if (!astPaneRef.current) return;
               const startWidth = astPaneRef.current.getBoundingClientRect().width;
               resizeRef.current = { startX: e.clientX, startWidth, pointerId: e.pointerId };
-              (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+              e.currentTarget.setPointerCapture(e.pointerId);
               e.preventDefault();
             }}
             onPointerMove={(e) => {
@@ -197,7 +205,7 @@ function App() {
               if (!state || state.pointerId !== e.pointerId) return;
               resizeRef.current = null;
               try {
-                (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+                e.currentTarget.releasePointerCapture(e.pointerId);
               } catch {
                 // ignore
               }
@@ -207,7 +215,7 @@ function App() {
               if (!state || state.pointerId !== e.pointerId) return;
               resizeRef.current = null;
               try {
-                (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+                e.currentTarget.releasePointerCapture(e.pointerId);
               } catch {
                 // ignore
               }
@@ -215,6 +223,7 @@ function App() {
           />
         )}
         <ASTview
+          key={selectedFile}
           root={rootNode}
           onSelectNode={(node) => {
             if (typeof node.line === 'number' && Number.isFinite(node.line)) {

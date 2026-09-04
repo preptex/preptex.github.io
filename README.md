@@ -1,46 +1,46 @@
-# Getting Started with Create React App
+# PrepTeX website
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A browser interface for inspecting and transforming virtual LaTeX projects with
+`@preptex/core`. Upload files or a folder, select an entry, inspect its source
+and AST, choose transformation options, and download the generated files.
 
-## Available Scripts
+The website uses React 19, TypeScript 4.9, CodeMirror 6, and Create React App 5.
+PrepTeX Core is pinned to **0.2.1**. All document processing and file contents
+stay in browser memory. The CodeMirror pane currently displays source read-only.
 
-In the project directory, you can run:
+## Development
 
-### `npm start`
+Use Node.js 22 and npm, matching the GitHub Actions environment.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+```sh
+npm ci
+npm start
+```
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+The development server opens at http://localhost:3000. Files disappear on reload;
+only AST display preferences are stored in localStorage.
 
-### `npm test`
+## Validation
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+```sh
+npm run typecheck
+npm run lint
+npm run test:ci
+npm run build
+```
 
-### `npm run build`
+The build is written to `build/`. CI runs these checks before deployment.
+`npm test` starts the interactive test watcher.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Development documentation
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+- [Website architecture](docs/architecture.md): components, hooks, services,
+  state ownership, processing flow, error handling, and extension guidance.
+- [AI development instructions](AGENTS.md): conventions and required checks.
+- [Installed PrepTeX integration guide](node_modules/@preptex/core/dist/docs/integration.md).
+- [Installed PrepTeX architecture](node_modules/@preptex/core/dist/docs/architecture.md).
+- [Installed PrepTeX API reference](node_modules/@preptex/core/dist/docs/api/README.md).
+- [Public TypeScript declarations](node_modules/@preptex/core/dist/index.d.ts).
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
-
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
-
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
+The installed-package links become available after `npm ci`. They are shipped
+with the exact dependency version; read them before updating the integration.
