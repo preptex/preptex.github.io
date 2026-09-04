@@ -1,154 +1,57 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  process as coreProcess,
-  transform as coreTransform,
-  combine_project,
-  InputCmdHandling,
-} from '@preptex/core';
-
+import { useCallback, useEffect, useState } from 'react';
+import { transformProject } from '@preptex/core';
+import type { ConditionName, ProjectFilePath, TransformedFile, WarningDiagnostic } from '@preptex/core';
 import type { CoreOptionsUI } from './useControl';
-import type { FilesMutation } from './useFiles';
-export type CoreRunResult = {
-  declaredConditions: string[];
-  notes: string[];
-  error?: string;
-};
+import type { FilesMap } from '../types/files';
+import { toProcessingError, toTransformOptions, updateProjectSnapshot } from '../services/core';
+import type { ProcessingError, ProjectSnapshot } from '../services/core';
 
-type CoreProject = ReturnType<typeof coreProcess>;
-
-function collectProjectNotes(project: CoreProject | null): string[] {
-  if (!project) return [];
-
-  const lines: string[] = [];
-  for (const [file, projectFile] of Object.entries(project.getFiles())) {
-    const notes = (projectFile as { notes?: ReadonlyArray<string> }).notes ?? [];
-    for (const note of notes) {
-      lines.push(`[${file}] ${note}`);
-    }
-  }
-  return lines;
+export interface CoreRunResult {
+  readonly declaredConditions: readonly ConditionName[];
+  readonly diagnostics: readonly WarningDiagnostic[];
+  readonly error: ProcessingError | null;
 }
 
-export function useCoreProcess(entryFile: string, mutation: FilesMutation, options: CoreOptionsUI) {
-  const [result, setResult] = useState<CoreRunResult | null>(null);
-  const [projectVersion, setProjectVersion] = useState(0);
+interface TransformFailure {
+  readonly sources: FilesMap;
+  readonly entry: ProjectFilePath;
+  readonly options: CoreOptionsUI;
+  readonly error: ProcessingError;
+}
 
-  const globalVersionRef = useRef(0);
-  const versionedFilesRef = useRef<Record<string, { text: string; version: number }>>({});
-  const globalProjectRef = useRef<CoreProject | null>(null);
+export function useCoreProcess(entryFile: ProjectFilePath, files: FilesMap, options: CoreOptionsUI) {
+  const [snapshot, setSnapshot] = useState<ProjectSnapshot | null>(null);
+  const [failure, setFailure] = useState<TransformFailure | null>(null);
 
-  const normalizeText = useCallback((text: string) => text.replace(/\r\n/g, '\n'), []);
-
-  const { id: mutationId, upserts, removes } = mutation;
-
-  const coreOptions = useMemo(
-    () => ({
-      suppressComments: options.suppressComments,
-      handleInputCmd:
-        options.handleInputCmd === 'flatten'
-          ? InputCmdHandling.FLATTEN
-          : options.handleInputCmd === 'recursive'
-            ? InputCmdHandling.RECURSIVE
-            : InputCmdHandling.NONE,
-      ifDecisions: options.handleIfConditions ? new Set(options.ifDecisions ?? []) : undefined,
-    }),
-    [options]
-  );
-
-  // Update global project incrementally whenever the user uploads/updates/removes files.
   useEffect(() => {
+    setSnapshot((previous) => previous?.sources === files
+      ? previous
+      : updateProjectSnapshot(previous, files));
+  }, [files]);
+
+  // Never expose or transform a snapshot from an older set of source buffers.
+  const current = snapshot?.sources === files ? snapshot : null;
+  const project = current?.status === 'ready' ? current.project : null;
+  const transformError = failure?.sources === files && failure.entry === entryFile
+    && failure.options === options ? failure.error : null;
+  const result: CoreRunResult = {
+    declaredConditions: project?.declaredConditions ?? [],
+    diagnostics: project?.diagnostics ?? [],
+    error: current?.status === 'error' ? current.error : transformError,
+  };
+  const canTransform = Boolean(project?.files.some((file) => file.path === entryFile));
+
+  const transform = useCallback((): readonly TransformedFile[] | null => {
+    if (!project || !entryFile) return null;
     try {
-      // Advance global version once per batch.
-      globalVersionRef.current = Math.max(globalVersionRef.current + 1, mutationId);
-      const version = globalVersionRef.current;
-
-      // Apply removals: rebuild, since combine_project can't delete files.
-      if (removes.length > 0) {
-        for (const name of removes) {
-          delete versionedFilesRef.current[name];
-        }
-
-        globalProjectRef.current = coreProcess({ ...versionedFilesRef.current });
-      }
-
-      // Apply upserts: parse only the batch and combine into the global project.
-      const upsertNames = Object.keys(upserts);
-      if (upsertNames.length > 0) {
-        const batch: Record<string, { text: string; version: number }> = {};
-        for (const [name, raw] of Object.entries(upserts)) {
-          const text = normalizeText(String(raw ?? ''));
-          const vf = { text, version };
-          versionedFilesRef.current[name] = vf;
-          batch[name] = vf;
-        }
-
-        const batchProject = coreProcess(batch);
-        globalProjectRef.current = globalProjectRef.current
-          ? combine_project(globalProjectRef.current, batchProject)
-          : batchProject;
-      }
-
-      const project = globalProjectRef.current;
-      const declared = Array.from(project?.getDeclaredConditions() ?? []);
-      setResult({ declaredConditions: declared, notes: collectProjectNotes(project) });
-      setProjectVersion((v) => v + 1);
-    } catch (err) {
-      setResult({ declaredConditions: [], notes: [], error: String(err) });
-      console.log(err);
+      const output = transformProject(entryFile, project, toTransformOptions(options));
+      setFailure(null);
+      return output.files;
+    } catch (error: unknown) {
+      setFailure({ sources: files, entry: entryFile, options, error: toProcessingError(error) });
+      return null;
     }
-  }, [mutationId, upserts, removes, normalizeText]);
+  }, [project, entryFile, files, options]);
 
-  // Keep UI state in sync when selection changes (even if no new mutation occurs).
-  useEffect(() => {
-    if (!entryFile) {
-      setResult(null);
-      return;
-    }
-
-    const project = globalProjectRef.current;
-    const declared = Array.from(project?.getDeclaredConditions() ?? []);
-    setResult((prev) => ({
-      declaredConditions: declared,
-      notes: collectProjectNotes(project),
-      error: prev?.error,
-    }));
-  }, [entryFile]);
-
-  const transform = useCallback(
-    (entryOverride?: string): Record<string, string> | null => {
-      const entry = entryOverride ?? entryFile;
-      if (!entry) {
-        return null;
-      }
-
-      try {
-        const project = globalProjectRef.current;
-        if (!project) return null;
-        setResult((prev) => ({
-          declaredConditions: prev?.declaredConditions ?? [],
-          notes: prev?.notes ?? [],
-          error: undefined,
-        }));
-        const outputs = coreTransform(entry, project, coreOptions);
-        return outputs;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setResult((prev) => ({
-          declaredConditions: prev?.declaredConditions ?? [],
-          notes: prev?.notes ?? [],
-          error: message,
-        }));
-        console.log(err);
-        return null;
-      }
-    },
-    [entryFile, coreOptions]
-  );
-
-  return {
-    result,
-    transform,
-    project: globalProjectRef.current,
-    projectVersion,
-  } as const;
+  return { result, transform, project, canTransform } as const;
 }

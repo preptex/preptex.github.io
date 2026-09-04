@@ -1,20 +1,14 @@
 import './ControlPanel.css';
-
-type InputCmdHandlingUI = 'none' | 'flatten' | 'recursive';
-
-export type CoreOptionsUI = {
-  suppressComments: boolean;
-  handleInputCmd: InputCmdHandlingUI;
-  handleIfConditions: boolean;
-  ifDecisions: string[];
-  outputName: string;
-};
+import { InputHandlingMode, isInputHandlingMode } from '@preptex/core';
+import type { ConditionName, ProjectFilePath } from '@preptex/core';
+import type { CoreOptionsUI } from '../model/useControl';
 
 export type ControlPanelProps = {
   options: CoreOptionsUI;
   onChange: (next: CoreOptionsUI) => void;
-  availableIfConditions?: string[];
-  entryFile?: string;
+  availableIfConditions?: readonly ConditionName[];
+  entryFile?: ProjectFilePath;
+  canTransform: boolean;
   onTransform?: () => void;
 };
 
@@ -24,6 +18,7 @@ export default function ControlPanel({
   availableIfConditions = [],
   entryFile = '',
   onTransform,
+  canTransform,
 }: ControlPanelProps) {
   const outputPreview =
     options.outputName || (entryFile ? entryFile.replace(/\.tex$/i, '') + '.processed.tex' : '');
@@ -38,11 +33,11 @@ export default function ControlPanel({
 
   const toggleCondition = (cond: string) => {
     if (!options.handleIfConditions) return;
-    const exists = options.ifDecisions.includes(cond);
+    const exists = options.enabledConditions.includes(cond);
     const nextIfs = exists
-      ? options.ifDecisions.filter((c) => c !== cond)
-      : [...options.ifDecisions, cond];
-    onChange({ ...options, ifDecisions: nextIfs });
+      ? options.enabledConditions.filter((c) => c !== cond)
+      : [...options.enabledConditions, cond];
+    onChange({ ...options, enabledConditions: nextIfs });
   };
 
   return (
@@ -88,14 +83,16 @@ export default function ControlPanel({
                 <select
                   id="handleInputCmd"
                   className="ControlInput"
-                  value={options.handleInputCmd}
-                  onChange={(e) =>
-                    onChange({ ...options, handleInputCmd: e.target.value as InputCmdHandlingUI })
-                  }
+                  value={options.inputHandling}
+                  aria-label="Input handling"
+                  onChange={(e) => {
+                    const mode = e.target.value;
+                    if (isInputHandlingMode(mode)) onChange({ ...options, inputHandling: mode });
+                  }}
                 >
-                  <option value="none">none</option>
-                  <option value="flatten">flatten</option>
-                  <option value="recursive">recursive</option>
+                  <option value={InputHandlingMode.Preserve}>preserve</option>
+                  <option value={InputHandlingMode.Flatten}>flatten</option>
+                  <option value={InputHandlingMode.Separate}>separate</option>
                 </select>
               </label>
             </div>
@@ -134,7 +131,7 @@ export default function ControlPanel({
                 <li className="ControlEmpty">No conditions found</li>
               ) : (
                 availableIfConditions.map((cond) => {
-                  const selected = options.ifDecisions.includes(cond);
+                  const selected = options.enabledConditions.includes(cond);
                   return (
                     <li key={cond}>
                       <button
@@ -165,8 +162,8 @@ export default function ControlPanel({
                 type="button"
                 className="ControlButton"
                 onClick={onTransform}
-                disabled={!entryFile}
-                title={entryFile ? `Transform ${entryFile}` : 'Select a file first'}
+                disabled={!canTransform}
+                title={canTransform ? `Transform ${entryFile}` : 'Select a successfully parsed file first'}
               >
                 Run
               </button>

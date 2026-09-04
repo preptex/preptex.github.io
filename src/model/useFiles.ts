@@ -1,96 +1,84 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useReducer } from 'react';
+import type { ProjectFilePath } from '@preptex/core';
+import type { FilesMap } from '../types/files';
 
-export type FilesMap = Record<string, string>;
+interface FilesState {
+  readonly filesByName: FilesMap;
+  readonly selectedFile: ProjectFilePath;
+  readonly uploadError: string | null;
+}
 
-type FileWithRelativePath = File & {
-  webkitRelativePath?: string;
-};
+type FilesAction =
+  | { readonly type: 'select'; readonly path: ProjectFilePath }
+  | { readonly type: 'upsert'; readonly files: FilesMap }
+  | { readonly type: 'remove'; readonly path: ProjectFilePath }
+  | { readonly type: 'upload-error'; readonly message: string };
 
-export type FilesMutation = {
-  id: number;
-  upserts: Record<string, string>;
-  removes: string[];
-};
+function filesReducer(state: FilesState, action: FilesAction): FilesState {
+  switch (action.type) {
+    case 'select':
+      return Object.prototype.hasOwnProperty.call(state.filesByName, action.path)
+        ? { ...state, selectedFile: action.path } : state;
+    case 'upsert': {
+      const filesByName = { ...state.filesByName, ...action.files };
+      return {
+        filesByName,
+        selectedFile: state.selectedFile || Object.keys(filesByName)[0] || '',
+        uploadError: null,
+      };
+    }
+    case 'remove': {
+      const filesByName = Object.fromEntries(
+        Object.entries(state.filesByName).filter(([path]) => path !== action.path),
+      );
+      return {
+        ...state,
+        filesByName,
+        selectedFile: state.selectedFile === action.path
+          ? Object.keys(filesByName)[0] ?? '' : state.selectedFile,
+      };
+    }
+    case 'upload-error':
+      return { ...state, uploadError: action.message };
+  }
+}
+
+function readTextFile(file: File): Promise<readonly [ProjectFilePath, string]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read ' + file.name + '.'));
+    reader.onabort = () => reject(new Error('Reading ' + file.name + ' was cancelled.'));
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error('Could not read ' + file.name + ' as text.'));
+        return;
+      }
+      const path = (file.webkitRelativePath || file.name).replace(/\\/g, '/');
+      resolve([path, reader.result]);
+    };
+    reader.readAsText(file);
+  });
+}
 
 export function useFiles(initial: FilesMap = {}) {
-  const [filesByName, setFilesByName] = useState<FilesMap>({ ...initial });
-  const [selectedFile, setSelectedFile] = useState<string>(Object.keys(initial)[0] ?? '');
-  const [mutation, setMutation] = useState<FilesMutation>({ id: 0, upserts: {}, removes: [] });
-
-  const fileNames = useMemo(() => Object.keys(filesByName), [filesByName]);
-
-  const selectFile = useCallback((name: string) => setSelectedFile(name), []);
-
-  const upsertFiles = useCallback(async (fileList: FileList | File[]) => {
-    const files = Array.from(fileList);
-    const entries = await Promise.all(
-      files.map(
-        (f) =>
-          new Promise<[string, string]>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onerror = () => reject(reader.error);
-            reader.onload = () => {
-              const path = (f as FileWithRelativePath).webkitRelativePath || f.name;
-              resolve([path.replace(/\\/g, '/'), String(reader.result ?? '')]);
-            };
-            reader.readAsText(f);
-          })
-      )
-    );
-
-    const batch: Record<string, string> = {};
-    for (const [name, text] of entries) batch[name] = text;
-
-    setFilesByName((prev) => {
-      const next: FilesMap = { ...prev };
-      for (const [name, text] of entries) {
-        next[name] = text;
-      }
-      return next;
-    });
-
-    // Track this as a single mutation batch.
-    setMutation((m) => ({ id: m.id + 1, upserts: batch, removes: [] }));
-
-    // Keep the current entry when adding support files; only auto-select when nothing is selected yet.
-    if (entries.length > 0 && !selectedFile) {
-      setSelectedFile(entries[0][0]);
-    }
-  }, [selectedFile]);
-
-  const upsertTextFiles = useCallback((entries: Record<string, string>) => {
-    setFilesByName((prev) => ({ ...prev, ...entries }));
-    setMutation((m) => ({ id: m.id + 1, upserts: { ...entries }, removes: [] }));
+  const [state, dispatch] = useReducer(filesReducer, initial, (files): FilesState => ({
+    filesByName: { ...files }, selectedFile: Object.keys(files)[0] ?? '', uploadError: null,
+  }));
+  const fileNames = useMemo(() => Object.keys(state.filesByName), [state.filesByName]);
+  const selectFile = useCallback((path: ProjectFilePath) => dispatch({ type: 'select', path }), []);
+  const removeFile = useCallback((path: ProjectFilePath) => dispatch({ type: 'remove', path }), []);
+  const upsertTextFiles = useCallback((files: FilesMap) => {
+    dispatch({ type: 'upsert', files });
   }, []);
 
-  const removeFile = useCallback(
-    (name: string) => {
-      setFilesByName((prev) => {
-        if (!(name in prev)) return prev;
-        const next: FilesMap = { ...prev };
-        delete next[name];
+  const upsertFiles = useCallback(async (fileList: FileList | readonly File[]): Promise<void> => {
+    try {
+      const entries = await Promise.all(Array.from(fileList).map(readTextFile));
+      dispatch({ type: 'upsert', files: Object.fromEntries(entries) });
+    } catch (error: unknown) {
+      dispatch({ type: 'upload-error', message: error instanceof Error ? error.message : String(error) });
+    }
+  }, []);
 
-        if (selectedFile === name) {
-          const nextSelected = Object.keys(next)[0] ?? '';
-          setSelectedFile(nextSelected);
-        }
-
-        return next;
-      });
-
-      setMutation((m) => ({ id: m.id + 1, upserts: {}, removes: [name] }));
-    },
-    [selectedFile]
-  );
-
-  return {
-    filesByName,
-    fileNames,
-    selectedFile,
-    selectFile,
-    mutation,
-    upsertFiles,
-    upsertTextFiles,
-    removeFile,
-  } as const;
+  return { ...state, fileNames, selectFile, upsertFiles, upsertTextFiles, removeFile } as const;
 }

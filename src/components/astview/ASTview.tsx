@@ -1,5 +1,6 @@
 import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { LayoutNode } from '../../types/LayoutNode';
+import { isLayoutNodeKind, LAYOUT_NODE_KINDS } from '../../types/LayoutNode';
+import type { LayoutNode, LayoutNodeKind } from '../../types/LayoutNode';
 import TreeNode from './TreeNode';
 
 interface ASTviewProps {
@@ -11,22 +12,9 @@ interface ASTviewProps {
 
 const STORAGE_KEY = 'preptex.astview.options.v5';
 
-const DEFAULT_NODE_KINDS = [
-  'root',
-  'section',
-  'environment',
-  'condition',
-  'if',
-  'else',
-  'text',
-  'comment',
-  'command',
-  'math',
-  'group',
-  'input',
-];
+const DEFAULT_NODE_KINDS = LAYOUT_NODE_KINDS;
 
-const DEFAULT_VISIBLE_NODE_KINDS = [
+const DEFAULT_VISIBLE_NODE_KINDS: readonly LayoutNodeKind[] = [
   'root',
   'section',
   'input',
@@ -49,23 +37,32 @@ const DEFAULT_ENVIRONMENTS = [
 const DEFAULT_VISIBLE_ENVIRONMENTS = ['document', 'abstract', 'figure', 'table', 'tabular', 'theorem'];
 
 type AstViewOptions = {
-  visibleKinds: string[];
-  commandCards: string[];
-  selectedCommands: string[];
-  userCommands: string[];
-  environmentCards: string[];
-  selectedEnvironments: string[];
-  userEnvironments: string[];
+  readonly visibleKinds: readonly LayoutNodeKind[];
+  readonly commandCards: readonly string[];
+  readonly selectedCommands: readonly string[];
+  readonly userCommands: readonly string[];
+  readonly environmentCards: readonly string[];
+  readonly selectedEnvironments: readonly string[];
+  readonly userEnvironments: readonly string[];
 };
 
 function normalizeOptionName(value: string): string {
   return value.trim().replace(/^\\+/, '').toLowerCase();
 }
 
-function unique(values: string[]): string[] {
+function unique(values: readonly string[]): string[] {
   return Array.from(new Set(values.map(normalizeOptionName).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b),
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringArray(value: unknown, fallback: readonly string[] = []): readonly string[] {
+  return Array.isArray(value) && value.every((item: unknown) => typeof item === 'string')
+    ? value : fallback;
 }
 
 function loadOptions(): AstViewOptions {
@@ -82,27 +79,28 @@ function loadOptions(): AstViewOptions {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as Partial<AstViewOptions>;
-    const commandCards = unique([...(parsed.commandCards ?? []), ...DEFAULT_COMMANDS]);
-    const selectedCommands = unique(parsed.selectedCommands ?? DEFAULT_VISIBLE_COMMANDS).filter(
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return fallback;
+    const commandCards = unique([...stringArray(parsed.commandCards), ...DEFAULT_COMMANDS]);
+    const selectedCommands = unique(stringArray(parsed.selectedCommands, DEFAULT_VISIBLE_COMMANDS)).filter(
       (name) => commandCards.includes(name),
     );
     const environmentCards = unique([
-      ...(parsed.environmentCards ?? []),
+      ...stringArray(parsed.environmentCards),
       ...DEFAULT_ENVIRONMENTS,
     ]);
     const selectedEnvironments = unique(
-      parsed.selectedEnvironments ?? DEFAULT_VISIBLE_ENVIRONMENTS,
+      stringArray(parsed.selectedEnvironments, DEFAULT_VISIBLE_ENVIRONMENTS),
     ).filter((name) => environmentCards.includes(name));
 
     return {
-      visibleKinds: parsed.visibleKinds?.length ? parsed.visibleKinds : fallback.visibleKinds,
+      visibleKinds: stringArray(parsed.visibleKinds, fallback.visibleKinds).filter(isLayoutNodeKind),
       commandCards,
       selectedCommands,
-      userCommands: unique(parsed.userCommands ?? []).filter((name) => commandCards.includes(name)),
+      userCommands: unique(stringArray(parsed.userCommands)).filter((name) => commandCards.includes(name)),
       environmentCards,
       selectedEnvironments,
-      userEnvironments: unique(parsed.userEnvironments ?? []).filter((name) =>
+      userEnvironments: unique(stringArray(parsed.userEnvironments)).filter((name) =>
         environmentCards.includes(name),
       ),
     };
@@ -132,7 +130,7 @@ function filterTree(node: LayoutNode, options: AstViewOptions): LayoutNode | nul
   if (!shouldRender) return null;
 
   const visibleChildren = node.children
-    ?.map((child) => filterTree(child, options))
+    .map((child) => filterTree(child, options))
     .filter((child): child is LayoutNode => Boolean(child));
 
   return {
@@ -149,7 +147,11 @@ export default function ASTview({ root, onSelectNode, collapsed, onToggleCollaps
   const optionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(options));
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(options));
+    } catch {
+      // Filtering still works when browser storage is unavailable.
+    }
   }, [options]);
 
   useEffect(() => {
@@ -167,7 +169,7 @@ export default function ASTview({ root, onSelectNode, collapsed, onToggleCollaps
 
   const filteredRoot = useMemo(() => (root ? filterTree(root, options) : null), [root, options]);
 
-  const toggleKind = (kind: string) => {
+  const toggleKind = (kind: LayoutNodeKind) => {
     setOptions((current) => {
       const visibleKinds = current.visibleKinds.includes(kind)
         ? current.visibleKinds.filter((item) => item !== kind)

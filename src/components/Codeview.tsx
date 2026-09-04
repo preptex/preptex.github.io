@@ -20,8 +20,8 @@ export default function CodeMirrorView({ filename, code, jumpToLine, jumpToken }
     if (!hostRef.current || viewRef.current) return;
 
     const state = EditorState.create({
-      doc: code,
-      extensions: [lineNumbers(), EditorView.editable.of(false)],
+      doc: '',
+      extensions: [lineNumbers(), EditorView.editable.of(false), EditorState.readOnly.of(true)],
     });
 
     viewRef.current = new EditorView({
@@ -33,7 +33,7 @@ export default function CodeMirrorView({ filename, code, jumpToLine, jumpToken }
       viewRef.current?.destroy();
       viewRef.current = null;
     };
-  }, [code]);
+  }, []);
 
   // Update document when code changes
   useEffect(() => {
