@@ -4,10 +4,16 @@
 
 1. Read [the website architecture](docs/architecture.md) before changing components,
    hooks, services, or state flow.
-2. Read the PrepTeX docs shipped with the version being used:
+2. Read the PrepTeX docs shipped with the version being used. The `@preptex/core`
+   package contains comprehensive APIs, blueprints, and architecture specifications
+   that agents can inspect when using the library:
    - [Integration guide](node_modules/@preptex/core/dist/docs/integration.md)
    - [Core architecture](node_modules/@preptex/core/dist/docs/architecture.md)
    - [API reference](node_modules/@preptex/core/dist/docs/api/README.md)
+   - [Project model blueprint](node_modules/@preptex/core/dist/docs/project-model.md)
+   - [Node operations blueprint](node_modules/@preptex/core/dist/docs/node-operations.md)
+   - [0.3 migration guide](node_modules/@preptex/core/dist/docs/migration-0.3.md)
+   - [Website handoff guide](node_modules/@preptex/core/dist/docs/website-handoff.md)
    - [Public declarations](node_modules/@preptex/core/dist/index.d.ts)
 3. If a `packages/preptex-core` package is supplied, read its README, bundled
    `dist/docs/`, and declarations as well. Verify its package version against

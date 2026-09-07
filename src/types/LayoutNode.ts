@@ -1,8 +1,8 @@
-import type { NodeId, NodeType, SectionLevel } from '@preptex/core';
+import type { NodeId, NodeLocation, NodeType, SectionLevel, SourceRange } from '@preptex/core';
 
 export const LAYOUT_NODE_KINDS = [
   'root', 'section', 'environment', 'condition', 'if', 'else', 'text',
-  'newline', 'comment', 'command', 'math', 'group', 'input',
+  'newline', 'comment', 'command', 'math', 'group', 'input', 'token',
 ] as const;
 
 export type LayoutNodeKind = typeof LAYOUT_NODE_KINDS[number];
@@ -18,6 +18,8 @@ export interface LayoutNode {
   readonly data?: string;
   /** One-based source line in the selected input file. */
   readonly line: number;
+  readonly range?: SourceRange;
+  readonly path?: string;
   readonly icon: string;
   readonly x: number;
   readonly y: number;
@@ -25,7 +27,9 @@ export interface LayoutNode {
   readonly sublabel?: string;
   readonly sectionLevel?: SectionLevel;
   readonly isStarred?: boolean;
-  readonly id: NodeId;
+  readonly id: NodeId | string;
+  readonly occurrenceKey?: string;
+  readonly location?: NodeLocation;
   readonly strokeWidth: number;
   readonly strokeColor?: string;
   readonly children: readonly LayoutNode[];
