@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import './ControlPanel.css';
 import { InputHandlingMode, isInputHandlingMode } from '@preptex/core';
-import type { ConditionName, ProjectFilePath } from '@preptex/core';
+import type { ConditionName, GeneratedArtifact, ProjectFilePath } from '@preptex/core';
 import type { CoreOptionsUI } from '../model/useControl';
 
 export type ControlPanelProps = {
@@ -10,6 +11,30 @@ export type ControlPanelProps = {
   entryFile?: ProjectFilePath;
   canTransform: boolean;
   onTransform?: () => void;
+  onRunReferences?: () => void;
+  canRunReferences?: boolean;
+  referencesReason?: string;
+  onRunCommandUsage?: () => void;
+  canRunCommandUsage?: boolean;
+  commandUsageReason?: string;
+  isAnalyzing?: boolean;
+
+  onPreviewCommentSuppression?: (
+    target: 'source' | 'selected',
+    suppressCommentEnvironments: boolean,
+  ) => void;
+  onPreviewRemoveEnvironments?: (
+    names: readonly string[],
+    target: 'source' | 'selected',
+  ) => void;
+  onExportProject?: (
+    conditions: 'preserve' | 'materialize',
+    inputs: 'preserve' | 'inline',
+  ) => void;
+  artifacts?: readonly GeneratedArtifact[];
+  onDownloadZip?: () => void;
+  onDownloadArtifact?: (artifact: GeneratedArtifact) => void;
+  onSelectArtifact?: (artifact: GeneratedArtifact) => void;
 };
 
 export default function ControlPanel({
@@ -19,7 +44,29 @@ export default function ControlPanel({
   entryFile = '',
   onTransform,
   canTransform,
+  onRunReferences,
+  canRunReferences = false,
+  referencesReason,
+  onRunCommandUsage,
+  canRunCommandUsage = false,
+  commandUsageReason,
+  isAnalyzing = false,
+  onPreviewCommentSuppression,
+  onPreviewRemoveEnvironments,
+  onExportProject,
+  artifacts = [],
+  onDownloadZip,
+  onDownloadArtifact,
+  onSelectArtifact,
 }: ControlPanelProps) {
+  const [commentTarget, setCommentTarget] = useState<'source' | 'selected'>('source');
+  const [suppressCommentEnvs, setSuppressCommentEnvs] = useState(false);
+
+  const [envNamesText, setEnvNamesText] = useState('');
+  const [envTarget, setEnvTarget] = useState<'source' | 'selected'>('source');
+
+  const [exportConditions, setExportConditions] = useState<'preserve' | 'materialize'>('preserve');
+  const [exportInputs, setExportInputs] = useState<'preserve' | 'inline'>('preserve');
   const outputPreview =
     options.outputName || (entryFile ? entryFile.replace(/\.tex$/i, '') + '.processed.tex' : '');
 
@@ -156,17 +203,216 @@ export default function ControlPanel({
           </div>
 
           <div className="ControlGroup ControlGroup--action">
-            <h3>Pipeline</h3>
-            {onTransform ? (
-              <button
-                type="button"
-                className="ControlButton"
-                onClick={onTransform}
-                disabled={!canTransform}
-                title={canTransform ? `Transform ${entryFile}` : 'Select a successfully parsed file first'}
-              >
-                Run
-              </button>
+            <h3>Operations</h3>
+            <div className="ControlSubgroup">
+              <h4>Analyses</h4>
+              <div className="ControlActionButtons">
+                {onRunReferences ? (
+                  <button
+                    type="button"
+                    className="ControlButton ControlButton--secondary"
+                    onClick={onRunReferences}
+                    disabled={!canRunReferences || isAnalyzing}
+                    title={referencesReason || 'Check references in configured project'}
+                  >
+                    Check References
+                  </button>
+                ) : null}
+                {onRunCommandUsage ? (
+                  <button
+                    type="button"
+                    className="ControlButton ControlButton--secondary"
+                    onClick={onRunCommandUsage}
+                    disabled={!canRunCommandUsage || isAnalyzing}
+                    title={commandUsageReason || 'Check command definitions and usage'}
+                  >
+                    Check Commands
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="ControlSubgroup">
+              <h4>Pipeline</h4>
+              {onTransform ? (
+                <button
+                  type="button"
+                  className="ControlButton"
+                  onClick={onTransform}
+                  disabled={!canTransform}
+                  title={canTransform ? `Transform ${entryFile}` : 'Select a successfully parsed file first'}
+                >
+                  Run
+                </button>
+              ) : null}
+            </div>
+
+            {onPreviewCommentSuppression ? (
+              <div className="ControlSubgroup">
+                <h4>Comment Suppression</h4>
+                <div className="ControlFieldGrid">
+                  <label className="ControlField" htmlFor="commentTargetSelect">
+                    <span>Target</span>
+                    <select
+                      id="commentTargetSelect"
+                      className="ControlInput"
+                      value={commentTarget}
+                      onChange={(e) => setCommentTarget(e.target.value as 'source' | 'selected')}
+                    >
+                      <option value="source">All sources</option>
+                      <option value="selected">Configured view</option>
+                    </select>
+                  </label>
+                  <label className="ControlCheck">
+                    <input
+                      type="checkbox"
+                      checked={suppressCommentEnvs}
+                      onChange={(e) => setSuppressCommentEnvs(e.target.checked)}
+                    />
+                    <span>Suppress comment environments</span>
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="ControlButton ControlButton--secondary"
+                  onClick={() => onPreviewCommentSuppression(commentTarget, suppressCommentEnvs)}
+                >
+                  Preview Comments
+                </button>
+              </div>
+            ) : null}
+
+            {onPreviewRemoveEnvironments ? (
+              <div className="ControlSubgroup">
+                <h4>Remove Environments by Name</h4>
+                <div className="ControlFieldGrid">
+                  <label className="ControlField" htmlFor="envNamesInput">
+                    <span>Names</span>
+                    <input
+                      id="envNamesInput"
+                      type="text"
+                      className="ControlInput"
+                      placeholder="e.g. comment, C"
+                      value={envNamesText}
+                      onChange={(e) => setEnvNamesText(e.target.value)}
+                    />
+                  </label>
+                  <label className="ControlField" htmlFor="envTargetSelect">
+                    <span>Target</span>
+                    <select
+                      id="envTargetSelect"
+                      className="ControlInput"
+                      value={envTarget}
+                      onChange={(e) => setEnvTarget(e.target.value as 'source' | 'selected')}
+                    >
+                      <option value="source">All sources</option>
+                      <option value="selected">Configured view</option>
+                    </select>
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="ControlButton ControlButton--secondary"
+                  disabled={!envNamesText.trim()}
+                  onClick={() => {
+                    const names = envNamesText
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    if (names.length > 0) {
+                      onPreviewRemoveEnvironments(names, envTarget);
+                    }
+                  }}
+                >
+                  Preview Removal
+                </button>
+              </div>
+            ) : null}
+
+            {onExportProject ? (
+              <div className="ControlSubgroup">
+                <h4>Materialize &amp; Export Project</h4>
+                <div className="ControlFieldGrid">
+                  <label className="ControlField" htmlFor="exportConditions">
+                    <span>Conditions</span>
+                    <select
+                      id="exportConditions"
+                      className="ControlInput"
+                      value={exportConditions}
+                      onChange={(e) =>
+                        setExportConditions(e.target.value as 'preserve' | 'materialize')
+                      }
+                    >
+                      <option value="preserve">Preserve</option>
+                      <option value="materialize">Materialize</option>
+                    </select>
+                  </label>
+                  <label className="ControlField" htmlFor="exportInputs">
+                    <span>Inputs</span>
+                    <select
+                      id="exportInputs"
+                      className="ControlInput"
+                      value={exportInputs}
+                      onChange={(e) =>
+                        setExportInputs(e.target.value as 'preserve' | 'inline')
+                      }
+                    >
+                      <option value="preserve">Preserve</option>
+                      <option value="inline">Inline</option>
+                    </select>
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="ControlButton ControlButton--secondary"
+                  onClick={() => onExportProject(exportConditions, exportInputs)}
+                >
+                  Export Project
+                </button>
+              </div>
+            ) : null}
+
+            {artifacts.length > 0 ? (
+              <div className="ControlSubgroup ArtifactsSection">
+                <h4>Generated Artifacts ({artifacts.length})</h4>
+                {onDownloadZip ? (
+                  <button
+                    type="button"
+                    className="ControlButton ControlButton--primary"
+                    onClick={onDownloadZip}
+                  >
+                    Download ZIP
+                  </button>
+                ) : null}
+                <div className="ArtifactsList">
+                  {artifacts.map((art) => (
+                    <div key={art.path} className="ArtifactItem">
+                      <span className="ArtifactPath">{art.path}</span>
+                      <span className="ArtifactTopology">{art.topology}</span>
+                      <div className="ArtifactActions">
+                        {onSelectArtifact ? (
+                          <button
+                            type="button"
+                            className="ArtifactBtn"
+                            onClick={() => onSelectArtifact(art)}
+                          >
+                            View
+                          </button>
+                        ) : null}
+                        {onDownloadArtifact ? (
+                          <button
+                            type="button"
+                            className="ArtifactBtn"
+                            onClick={() => onDownloadArtifact(art)}
+                          >
+                            Download
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : null}
           </div>
         </div>

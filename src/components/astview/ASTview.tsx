@@ -3,11 +3,14 @@ import { isLayoutNodeKind, LAYOUT_NODE_KINDS } from '../../types/LayoutNode';
 import type { LayoutNode, LayoutNodeKind } from '../../types/LayoutNode';
 import TreeNode from './TreeNode';
 
-interface ASTviewProps {
+export interface ASTviewProps {
   root?: LayoutNode | null;
   onSelectNode?: (node: LayoutNode) => void;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
+  structureMode?: 'configured' | 'source';
+  onChangeStructureMode?: (mode: 'configured' | 'source') => void;
+  isConfiguredAvailable?: boolean;
 }
 
 const STORAGE_KEY = 'preptex.astview.options.v5';
@@ -139,7 +142,15 @@ function filterTree(node: LayoutNode, options: AstViewOptions): LayoutNode | nul
   };
 }
 
-export default function ASTview({ root, onSelectNode, collapsed, onToggleCollapsed }: ASTviewProps) {
+export default function ASTview({
+  root,
+  onSelectNode,
+  collapsed,
+  onToggleCollapsed,
+  structureMode = 'configured',
+  onChangeStructureMode,
+  isConfiguredAvailable = true,
+}: ASTviewProps) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [options, setOptions] = useState<AstViewOptions>(() => loadOptions());
   const [newCommand, setNewCommand] = useState('');
@@ -256,6 +267,28 @@ export default function ASTview({ root, onSelectNode, collapsed, onToggleCollaps
       <div className="AstTreeHeader">
         <h2>AST View</h2>
         <div className="AstTreeActions">
+          {!collapsed && onChangeStructureMode ? (
+            <div className="AstTreeModeToggle" role="group" aria-label="Tree view mode">
+              <button
+                type="button"
+                className={`AstTreeModeBtn ${structureMode === 'configured' ? 'AstTreeModeBtn--active' : ''}`}
+                disabled={!isConfiguredAvailable}
+                onClick={() => onChangeStructureMode('configured')}
+                title={isConfiguredAvailable ? 'Configured document structure' : 'Configure an entry in Settings to enable structure view'}
+              >
+                Structure
+              </button>
+              <button
+                type="button"
+                className={`AstTreeModeBtn ${structureMode === 'source' ? 'AstTreeModeBtn--active' : ''}`}
+                onClick={() => onChangeStructureMode('source')}
+                title="Raw source syntax and tokens"
+              >
+                Source
+              </button>
+            </div>
+          ) : null}
+
           {!collapsed ? (
             <div className="AstTreeOptionsWrap" ref={optionsRef}>
               <button
