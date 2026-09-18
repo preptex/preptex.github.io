@@ -69,4 +69,87 @@ describe('ControlPanel', () => {
     expect(cmdBtn).toBeDisabled();
     expect(cmdBtn).toHaveAttribute('title', 'Project view is blocked');
   });
+
+  test('triggers comment suppression and environment removal previews', () => {
+    const onPreviewCommentSuppression = jest.fn();
+    const onPreviewRemoveEnvironments = jest.fn();
+
+    render(
+      <ControlPanel
+        options={defaultOptions}
+        onChange={jest.fn()}
+        entryFile="main.tex"
+        canTransform={true}
+        onPreviewCommentSuppression={onPreviewCommentSuppression}
+        onPreviewRemoveEnvironments={onPreviewRemoveEnvironments}
+      />,
+    );
+
+    const commentBtn = screen.getByRole('button', { name: /preview comments/i });
+    fireEvent.click(commentBtn);
+    expect(onPreviewCommentSuppression).toHaveBeenCalledTimes(1);
+
+    const envInput = screen.getByPlaceholderText(/e\.g\. comment, C/i);
+    fireEvent.change(envInput, { target: { value: 'C, comment' } });
+    const envBtn = screen.getByRole('button', { name: /preview removal/i });
+    fireEvent.click(envBtn);
+    expect(onPreviewRemoveEnvironments).toHaveBeenCalledWith(['C', 'comment'], 'source');
+  });
+
+  test('renders generated artifacts and triggers ZIP download', () => {
+    const onDownloadZip = jest.fn();
+    const onSelectArtifact = jest.fn();
+
+    const mockArtifacts = [
+      {
+        path: 'main.tex',
+        source: 'Transformed content',
+        provenance: {
+          snapshotId: 'snap-1',
+          viewId: null,
+          request: {
+            operation: 'materialize' as const,
+            options: { inputs: 'preserve' as const },
+          },
+          operationVersion: 1 as const,
+        },
+        origins: [],
+        remainingInputs: [],
+        topology: 'preserved-project' as const,
+      },
+      {
+        path: 'intro.tex',
+        source: 'Intro content',
+        provenance: {
+          snapshotId: 'snap-1',
+          viewId: null,
+          request: {
+            operation: 'materialize' as const,
+            options: { inputs: 'preserve' as const },
+          },
+          operationVersion: 1 as const,
+        },
+        origins: [],
+        remainingInputs: [],
+        topology: 'preserved-project' as const,
+      },
+    ];
+
+    render(
+      <ControlPanel
+        options={defaultOptions}
+        onChange={jest.fn()}
+        entryFile="main.tex"
+        canTransform={true}
+        artifacts={mockArtifacts}
+        onDownloadZip={onDownloadZip}
+        onSelectArtifact={onSelectArtifact}
+      />,
+    );
+
+    expect(screen.getByText(/generated artifacts \(2\)/i)).toBeInTheDocument();
+    const zipBtn = screen.getByRole('button', { name: /download zip/i });
+    fireEvent.click(zipBtn);
+    expect(onDownloadZip).toHaveBeenCalledTimes(1);
+  });
 });

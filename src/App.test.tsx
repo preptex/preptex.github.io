@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 
@@ -102,4 +102,84 @@ test('toggles AST view structure and source modes', async () => {
   const structureModeBtn = screen.getByRole('button', { name: 'Structure' });
   fireEvent.click(structureModeBtn);
   expect(screen.getByRole('button', { name: 'Structure' })).toHaveClass('AstTreeModeBtn--active');
+});
+
+test('previews comment suppression and applies edits atomically (UI-14, UI-28)', async () => {
+  render(<App />);
+  userEvent.upload(screen.getByLabelText('Upload files'), [
+    new File(['% A comment to remove\nKeep this text\n'], 'main.tex', { type: 'text/plain' }),
+  ]);
+  await waitFor(() => {
+    expect(screen.getByLabelText('Project Entry File')).toHaveValue('main.tex');
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
+
+  // Click Preview Comments
+  const previewCommentsBtn = await screen.findByRole('button', { name: /preview comments/i });
+  fireEvent.click(previewCommentsBtn);
+
+  // Edit Preview dialog opens with proposed edits
+  const dialog = await screen.findByRole('dialog', { name: /edit preview/i });
+  expect(dialog).toBeInTheDocument();
+  expect(within(dialog).getByText(/% A comment to remove/i)).toBeInTheDocument();
+
+  // Click Apply Edits to Sources
+  const applyEditsBtn = within(dialog).getByRole('button', { name: /apply edits to sources/i });
+  fireEvent.click(applyEditsBtn);
+
+  // Dialog closes
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog', { name: /edit preview/i })).not.toBeInTheDocument();
+  });
+});
+
+test('previews named environment removal and allows discarding (UI-27)', async () => {
+  render(<App />);
+  userEvent.upload(screen.getByLabelText('Upload files'), [
+    new File(['\\begin{C}\nDebug info\n\\end{C}\nMain content\n'], 'main.tex', { type: 'text/plain' }),
+  ]);
+  await waitFor(() => {
+    expect(screen.getByLabelText('Project Entry File')).toHaveValue('main.tex');
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
+
+  // Enter environment names
+  const envInput = await screen.findByPlaceholderText(/e\.g\. comment, C/i);
+  fireEvent.change(envInput, { target: { value: 'C' } });
+
+  // Click Preview Removal
+  const previewRemovalBtn = screen.getByRole('button', { name: /preview removal/i });
+  fireEvent.click(previewRemovalBtn);
+
+  // Edit preview dialog opens
+  const envDialog = await screen.findByRole('dialog', { name: /edit preview/i });
+  expect(envDialog).toBeInTheDocument();
+  expect(within(envDialog).getByText(/Debug info/i)).toBeInTheDocument();
+
+  // Click Discard
+  const discardBtn = within(envDialog).getByRole('button', { name: /discard/i });
+  fireEvent.click(discardBtn);
+
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog', { name: /edit preview/i })).not.toBeInTheDocument();
+  });
+});
+
+test('exports project and shows generated artifacts with ZIP download (UI-20)', async () => {
+  render(<App />);
+  userEvent.upload(screen.getByLabelText('Upload files'), [
+    new File(['\\documentclass{article}\n\\begin{document}\nHello World\n\\end{document}'], 'main.tex', { type: 'text/plain' }),
+  ]);
+  await waitFor(() => {
+    expect(screen.getByLabelText('Project Entry File')).toHaveValue('main.tex');
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
+
+  // Click Export Project
+  const exportBtn = await screen.findByRole('button', { name: /export project/i });
+  fireEvent.click(exportBtn);
+
+  // Generated artifacts section appears
+  expect(await screen.findByText(/generated artifacts \(1\)/i)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /download zip/i })).toBeInTheDocument();
 });

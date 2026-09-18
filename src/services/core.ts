@@ -21,6 +21,7 @@ import {
   selectProjectNode,
   sourceOffsetAt,
   updateProjectSnapshot as updateProjectSnapshotCore,
+  validateProjectEditPlan,
   walkConfiguredNodes,
 } from '@preptex/core';
 import type {
@@ -222,6 +223,19 @@ export function applyProjectEditsAdapter(
   view?: ProjectView,
 ): CoreProjectSnapshot {
   return applyProjectEdits(snapshot, plan, view);
+}
+
+export function validateProjectEditPlanAdapter(
+  snapshot: CoreProjectSnapshot,
+  plan: ProjectEditPlan,
+  view?: ProjectView,
+): { readonly eligible: true } | { readonly eligible: false; readonly error: ProcessingError } {
+  try {
+    validateProjectEditPlan(snapshot, plan, view);
+    return { eligible: true };
+  } catch (err: unknown) {
+    return { eligible: false, error: toProcessingError(err) };
+  }
 }
 
 // ---------------------------------------------------------------------------

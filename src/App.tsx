@@ -6,6 +6,8 @@ import './App.css';
 import { ASTview, Codeview, ControlPanel, Filetree, LogPanel } from './components';
 import { ProjectSetupDialog } from './components/ProjectSetupDialog';
 import { ConfigurationSummary } from './components/ConfigurationSummary';
+import { EditPreviewDialog } from './components/EditPreviewDialog';
+import { NodeActionBar } from './components/NodeActionBar';
 import { useFiles } from './model/useFiles';
 import { useControl } from './model/useControl';
 import { useCoreProcess } from './model/useCoreProcess';
@@ -15,6 +17,9 @@ import { useOperations } from './model/useOperations';
 import { useArtifacts } from './model/useArtifacts';
 import { TreeLayoutBuilder } from './components/astview/treebuilder';
 import type { LayoutNode } from './types/LayoutNode';
+import type { ConfiguredNode, GeneratedArtifact } from '@preptex/core';
+import { selectProjectNodeAdapter, walkConfiguredNodesAdapter } from './services/core';
+import { downloadBlob, downloadZipArchive } from './services/zip';
 
 function App() {
   const [jumpToLine, setJumpToLine] = useState<number | undefined>(undefined);
@@ -29,6 +34,10 @@ function App() {
   const [astWidth, setAstWidth] = useState(320);
   const astPaneRef = useRef<HTMLDivElement | null>(null);
   const resizeRef = useRef<{ startX: number; startWidth: number; pointerId: number } | null>(null);
+
+  const [selectedNode, setSelectedNode] = useState<ConfiguredNode | null>(null);
+  const [isEditPreviewOpen, setIsEditPreviewOpen] = useState(false);
+  const [selectedArtifact, setSelectedArtifact] = useState<GeneratedArtifact | null>(null);
 
   const {
     filesByName,
@@ -58,6 +67,8 @@ function App() {
   const { options, setOptions } = useControl();
 
   const code = filesByName[selectedFile] ?? '';
+  const displayedFilename = selectedArtifact ? selectedArtifact.path : selectedFile;
+  const displayedCode = selectedArtifact ? selectedArtifact.source : code;
 
   const effectiveEntry = projectConfig.entryPath || selectedFile;
 
@@ -139,6 +150,7 @@ function App() {
   };
 
   const onSelectFile = (name: string) => {
+    setSelectedArtifact(null);
     setJumpToLine(undefined);
     setJumpRange(undefined);
     selectFile(name);
@@ -172,6 +184,25 @@ function App() {
         configuration={projectConfig}
         onApply={projectConfig.commitConfiguration}
         detectedConditions={projectModel.detectedConditions}
+      />
+
+      <EditPreviewDialog
+        isOpen={isEditPreviewOpen && Boolean(operations.pendingEditPlan)}
+        onClose={() => setIsEditPreviewOpen(false)}
+        editPlan={operations.pendingEditPlan}
+        isStale={operations.isEditPlanStale}
+        error={operations.transformationError}
+        onDiscard={() => {
+          operations.discardPendingEdits();
+          setIsEditPreviewOpen(false);
+        }}
+        onApply={() => {
+          operations.applyPendingEdits((updatedFiles) => {
+            upsertTextFiles(updatedFiles);
+            setSelectedNode(null);
+            setIsEditPreviewOpen(false);
+          });
+        }}
       />
 
       <div className="AppCell AppCell--leftTop">
@@ -237,6 +268,52 @@ function App() {
                 canRunCommandUsage={operations.checkCommandUsageCapability().eligible}
                 commandUsageReason={operations.checkCommandUsageCapability().reasons[0]?.message}
                 isAnalyzing={operations.running}
+                onPreviewCommentSuppression={(target, suppressCommentEnvironments) => {
+                  operations.planTransformation({
+                    operation: 'suppress-comments',
+                    options: {
+                      target,
+                      suppressCommentEnvironments,
+                    },
+                  });
+                  setIsEditPreviewOpen(true);
+                }}
+                onPreviewRemoveEnvironments={(names, target) => {
+                  operations.planTransformation({
+                    operation: 'remove-environments',
+                    options: {
+                      target,
+                      names,
+                    },
+                  });
+                  setIsEditPreviewOpen(true);
+                }}
+                onExportProject={(conditions, inputs) => {
+                  operations.planTransformation({
+                    operation: 'export-project',
+                    options: {
+                      conditions,
+                      inputs,
+                      suppressComments: options.suppressComments,
+                    },
+                  });
+                }}
+                artifacts={operations.artifacts}
+                onDownloadZip={() => {
+                  if (operations.artifacts.length > 0) {
+                    downloadZipArchive(
+                      operations.artifacts.map((a) => ({ path: a.path, content: a.source })),
+                      'preptex-export.zip',
+                    );
+                  }
+                }}
+                onDownloadArtifact={(art) => {
+                  const blob = new Blob([art.source], { type: 'text/plain;charset=utf-8' });
+                  downloadBlob(blob, art.path);
+                }}
+                onSelectArtifact={(art) => {
+                  setSelectedArtifact(art);
+                }}
               />
             </div>
           ) : (
@@ -248,6 +325,7 @@ function App() {
                 isStale={operations.isStale}
                 onSelectLocation={(location) => {
                   if (filesByName[location.path]) {
+                    setSelectedArtifact(null);
                     selectFile(location.path);
                   }
                   setJumpRange(location.range);
@@ -267,8 +345,8 @@ function App() {
           onOpenSettings={() => setIsSetupOpen(true)}
         />
         <Codeview
-          filename={selectedFile}
-          code={code}
+          filename={displayedFilename}
+          code={displayedCode}
           jumpToLine={jumpToLine}
           jumpRange={jumpRange}
           jumpToken={jumpToken}
@@ -323,6 +401,46 @@ function App() {
             }}
           />
         )}
+        <NodeActionBar
+          selectedNode={selectedNode}
+          onRemoveNode={() => {
+            if (!projectModel.view || !selectedNode) return;
+            const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
+            operations.planTransformation({
+              operation: 'edit-nodes',
+              options: {
+                target: 'selected',
+                actions: [{ kind: 'remove-node', selection: sel }],
+              },
+            });
+            setIsEditPreviewOpen(true);
+          }}
+          onRenameEnvironment={(newName) => {
+            if (!projectModel.view || !selectedNode) return;
+            const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
+            operations.planTransformation({
+              operation: 'edit-nodes',
+              options: {
+                target: 'selected',
+                actions: [{ kind: 'rename-environment', selection: sel, name: newName }],
+              },
+            });
+            setIsEditPreviewOpen(true);
+          }}
+          onWrapNode={(wrapperName) => {
+            if (!projectModel.view || !selectedNode) return;
+            const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
+            operations.planTransformation({
+              operation: 'edit-nodes',
+              options: {
+                target: 'selected',
+                actions: [{ kind: 'wrap-node', selection: sel, name: wrapperName }],
+              },
+            });
+            setIsEditPreviewOpen(true);
+          }}
+          onClearSelection={() => setSelectedNode(null)}
+        />
         <ASTview
           key={`${selectedFile}:${projectModel.view?.id ?? ''}`}
           root={rootNode}
@@ -331,6 +449,7 @@ function App() {
           isConfiguredAvailable={projectModel.view?.status === 'ready'}
           onSelectNode={(node) => {
             if (node.path && node.path !== selectedFile && filesByName[node.path]) {
+              setSelectedArtifact(null);
               selectFile(node.path);
             }
             if (node.range) {
@@ -339,6 +458,13 @@ function App() {
             if (typeof node.line === 'number' && Number.isFinite(node.line)) {
               setJumpToLine(node.line);
               setJumpToken((value) => value + 1);
+            }
+            if (projectModel.view?.status === 'ready' && node.occurrenceKey) {
+              const allNodes = walkConfiguredNodesAdapter(projectModel.view.root);
+              const found = allNodes.find((n) => n.occurrenceKey === node.occurrenceKey) ?? null;
+              setSelectedNode(found);
+            } else {
+              setSelectedNode(null);
             }
           }}
           collapsed={astCollapsed}

@@ -88,4 +88,92 @@ describe('Milestone 5: Independent Analysis Operations', () => {
     expect(capability.eligible).toBe(false);
     expect(capability.reasons[0]?.code).toBe('view-not-ready');
   });
+
+  it('plans comment suppression and applies edits to sources', () => {
+    const { result } = renderHook(() =>
+      useOperationsTest({
+        'main.tex': '% A comment\nHello World\n',
+      }),
+    );
+
+    act(() => {
+      result.current.operations.planTransformation({
+        operation: 'suppress-comments',
+        options: { target: 'source' },
+      });
+    });
+
+    expect(result.current.operations.transformationResult).not.toBeNull();
+    expect(result.current.operations.pendingEditPlan).not.toBeNull();
+    expect(result.current.operations.isEditPlanStale).toBe(false);
+
+    // Apply the pending edits to sources
+    act(() => {
+      result.current.operations.applyPendingEdits((updatedFiles) => {
+        result.current.files.upsertTextFiles(updatedFiles);
+      });
+    });
+
+    // Source files should now be updated without comments
+    expect(result.current.files.filesByName['main.tex']).not.toContain('% A comment');
+    expect(result.current.files.filesByName['main.tex']).toContain('Hello World');
+    expect(result.current.operations.pendingEditPlan).toBeNull();
+  });
+
+  it('detects stale edit plans when source changes before apply', () => {
+    const { result } = renderHook(() =>
+      useOperationsTest({
+        'main.tex': '% A comment\nHello World\n',
+      }),
+    );
+
+    act(() => {
+      result.current.operations.planTransformation({
+        operation: 'suppress-comments',
+        options: { target: 'source' },
+      });
+    });
+
+    expect(result.current.operations.isEditPlanStale).toBe(false);
+
+    // Change source before applying
+    act(() => {
+      result.current.files.upsertTextFiles({ 'main.tex': 'Completely different' });
+    });
+
+    expect(result.current.operations.isEditPlanStale).toBe(true);
+
+    // Trying to apply stale edit plan should fail / report error
+    act(() => {
+      result.current.operations.applyPendingEdits((updatedFiles) => {
+        result.current.files.upsertTextFiles(updatedFiles);
+      });
+    });
+
+    expect(result.current.operations.transformationError).not.toBeNull();
+  });
+
+  it('discards pending edit plans without applying', () => {
+    const { result } = renderHook(() =>
+      useOperationsTest({
+        'main.tex': '% A comment\nHello World\n',
+      }),
+    );
+
+    act(() => {
+      result.current.operations.planTransformation({
+        operation: 'suppress-comments',
+        options: { target: 'source' },
+      });
+    });
+
+    expect(result.current.operations.pendingEditPlan).not.toBeNull();
+
+    act(() => {
+      result.current.operations.discardPendingEdits();
+    });
+
+    expect(result.current.operations.pendingEditPlan).toBeNull();
+    expect(result.current.files.filesByName['main.tex']).toContain('% A comment');
+  });
 });

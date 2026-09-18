@@ -467,3 +467,65 @@ select.ControlInput {
     margin: 0 15%;
   }
 }
+
+.ArtifactsSection {
+  margin-top: 8px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}
+
+.ArtifactsList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.ArtifactItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.ArtifactPath {
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ArtifactTopology {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.ArtifactActions {
+  display: flex;
+  gap: 4px;
+}
+
+.ArtifactBtn {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.ArtifactBtn:hover {
+  background: var(--color-surface-soft);
+  border-color: var(--color-primary);
+}
