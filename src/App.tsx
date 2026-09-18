@@ -1,18 +1,29 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { TransformedFile } from '@preptex/core';
 import type { FilesMap } from './types/files';
 import './App.css';
 
 import { ASTview, Codeview, ControlPanel, Filetree, LogPanel } from './components';
+import { ProjectSetupDialog } from './components/ProjectSetupDialog';
+import { ConfigurationSummary } from './components/ConfigurationSummary';
 import { useFiles } from './model/useFiles';
 import { useControl } from './model/useControl';
 import { useCoreProcess } from './model/useCoreProcess';
+import { useProjectConfiguration } from './model/useProjectConfiguration';
+import { useProjectModel } from './model/useProjectModel';
+import { useOperations } from './model/useOperations';
+import { useArtifacts } from './model/useArtifacts';
 import { TreeLayoutBuilder } from './components/astview/treebuilder';
+import type { LayoutNode } from './types/LayoutNode';
 
 function App() {
   const [jumpToLine, setJumpToLine] = useState<number | undefined>(undefined);
+  const [jumpRange, setJumpRange] = useState<{ start: number; end: number } | undefined>(undefined);
   const [jumpToken, setJumpToken] = useState(0);
   const [bottomTab, setBottomTab] = useState<'control' | 'log'>('control');
+  const [structureMode, setStructureMode] = useState<'configured' | 'source'>('configured');
+  const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const hasImportedRef = useRef(false);
 
   const [astCollapsed, setAstCollapsed] = useState(false);
   const [astWidth, setAstWidth] = useState(320);
@@ -28,24 +39,59 @@ function App() {
     upsertFiles,
     upsertTextFiles,
     removeFile,
+    sourceRevision,
   } = useFiles();
+
+  const projectConfig = useProjectConfiguration(filesByName, { entryPath: selectedFile || null });
+  const projectModel = useProjectModel(filesByName, sourceRevision, projectConfig);
+  const operations = useOperations(projectModel.snapshot, projectModel.view);
+  const { addArtifacts } = useArtifacts();
+
+  // Open Project Setup once when files are first imported into an empty workspace
+  useEffect(() => {
+    if (fileNames.length > 0 && !hasImportedRef.current) {
+      hasImportedRef.current = true;
+      setIsSetupOpen(true);
+    }
+  }, [fileNames]);
 
   const { options, setOptions } = useControl();
 
   const code = filesByName[selectedFile] ?? '';
+
+  const effectiveEntry = projectConfig.entryPath || selectedFile;
 
   const {
     result: coreRun,
     transform,
     project,
     canTransform,
-  } = useCoreProcess(selectedFile, filesByName, options);
+  } = useCoreProcess(effectiveEntry, filesByName, options);
 
-  const rootNode = useMemo(() => {
+  const rootNode: LayoutNode | null = useMemo(() => {
+    if (structureMode === 'configured') {
+      if (projectModel.view?.status === 'ready' && projectModel.view.root) {
+        return new TreeLayoutBuilder().buildConfigured(projectModel.view.root);
+      }
+      const astRoot = project?.files.find((file) => file.path === selectedFile)?.root;
+      if (astRoot) {
+        return new TreeLayoutBuilder().build(astRoot);
+      }
+      return null;
+    }
+
+    // Source mode: raw tokens from scanned file
+    const scannedFile = projectModel.snapshot?.files.find((file) => file.path === selectedFile);
+    if (scannedFile && scannedFile.tokens.length > 0) {
+      return new TreeLayoutBuilder().buildSourceTokens(selectedFile, scannedFile.tokens);
+    }
+
     const astRoot = project?.files.find((file) => file.path === selectedFile)?.root;
-    if (!astRoot) return null;
-    return new TreeLayoutBuilder().build(astRoot);
-  }, [selectedFile, project]);
+    if (astRoot) {
+      return new TreeLayoutBuilder().build(astRoot);
+    }
+    return null;
+  }, [structureMode, projectModel.view, projectModel.snapshot, project, selectedFile]);
 
   const onDownload = (name: string) => {
     const text = filesByName[name] ?? '';
@@ -61,7 +107,6 @@ function App() {
   const normalizeOutputName = (raw: string): string => {
     const trimmed = raw.trim();
     if (!trimmed) return '';
-    // If user provided an extension, respect it. Otherwise default to .processed.tex
     const hasExt = /\.[^./\\]+$/.test(trimmed);
     return hasExt ? trimmed : `${trimmed}.processed.tex`;
   };
@@ -70,7 +115,7 @@ function App() {
     const overrideName = normalizeOutputName(options.outputName);
     let entryOutputName = '';
     const entries = outputs.map(({ path: name, source }) => {
-      const isEntry = name === selectedFile;
+      const isEntry = name === effectiveEntry;
       const newname =
         overrideName && isEntry ? overrideName : name.replace(/\.tex$/i, '') + '.processed.tex';
       if (isEntry) entryOutputName = newname;
@@ -89,11 +134,13 @@ function App() {
       setBottomTab('log');
       return;
     }
+    addArtifacts(outputs.map((out) => ({ path: out.path, source: out.source })));
     writeOutputsToTree(outputs);
   };
 
   const onSelectFile = (name: string) => {
     setJumpToLine(undefined);
+    setJumpRange(undefined);
     selectFile(name);
   };
 
@@ -107,8 +154,26 @@ function App() {
     '--ast-pane-col': astPaneCol,
   };
 
+  const findingsCount = operations.result?.findings.length ?? 0;
+  const diagnosticsCount = coreRun.diagnostics.length;
+  const hasError = Boolean(projectModel.error || operations.error || coreRun.error);
+  const logTabLabel = hasError
+    ? 'Log (error)'
+    : diagnosticsCount + findingsCount > 0
+    ? `Log (${diagnosticsCount + findingsCount})`
+    : 'Log';
+
   return (
     <div className="App" style={appStyle}>
+      <ProjectSetupDialog
+        isOpen={isSetupOpen}
+        onClose={() => setIsSetupOpen(false)}
+        files={filesByName}
+        configuration={projectConfig}
+        onApply={projectConfig.commitConfiguration}
+        detectedConditions={projectModel.detectedConditions}
+      />
+
       <div className="AppCell AppCell--leftTop">
         <Filetree
           files={fileNames}
@@ -141,7 +206,7 @@ function App() {
             className={bottomTab === 'log' ? 'BottomTab BottomTab--active' : 'BottomTab'}
             onClick={() => setBottomTab('log')}
           >
-            Log{coreRun.error ? ' (error)' : coreRun.diagnostics.length ? ` (${coreRun.diagnostics.length})` : ''}
+            {logTabLabel}
           </button>
         </div>
 
@@ -151,25 +216,61 @@ function App() {
               <ControlPanel
                 options={options}
                 onChange={setOptions}
-                entryFile={selectedFile}
-                availableIfConditions={coreRun.declaredConditions}
+                entryFile={effectiveEntry}
+                availableIfConditions={
+                  projectModel.detectedConditions.length > 0
+                    ? projectModel.detectedConditions
+                    : coreRun.declaredConditions
+                }
                 onTransform={onTransform}
                 canTransform={canTransform}
+                onRunReferences={() => {
+                  operations.runReferences();
+                  setBottomTab('log');
+                }}
+                canRunReferences={operations.checkReferencesCapability().eligible}
+                referencesReason={operations.checkReferencesCapability().reasons[0]?.message}
+                onRunCommandUsage={() => {
+                  operations.runCommandUsage();
+                  setBottomTab('log');
+                }}
+                canRunCommandUsage={operations.checkCommandUsageCapability().eligible}
+                commandUsageReason={operations.checkCommandUsageCapability().reasons[0]?.message}
+                isAnalyzing={operations.running}
               />
             </div>
           ) : (
             <div id="bottom-panel-log" role="tabpanel" aria-label="Log">
-              <LogPanel diagnostics={coreRun.diagnostics} error={coreRun.error} />
+              <LogPanel
+                diagnostics={coreRun.diagnostics}
+                error={projectModel.error || operations.error || coreRun.error}
+                findings={operations.result?.findings}
+                isStale={operations.isStale}
+                onSelectLocation={(location) => {
+                  if (filesByName[location.path]) {
+                    selectFile(location.path);
+                  }
+                  setJumpRange(location.range);
+                  setJumpToLine(location.range.line);
+                  setJumpToken((val) => val + 1);
+                }}
+              />
             </div>
           )}
         </div>
       </div>
 
       <div className="AppCell AppCell--middle">
+        <ConfigurationSummary
+          configuration={projectConfig}
+          view={projectModel.view}
+          onOpenSettings={() => setIsSetupOpen(true)}
+        />
         <Codeview
           filename={selectedFile}
           code={code}
           jumpToLine={jumpToLine}
+          jumpRange={jumpRange}
           jumpToken={jumpToken}
         />
       </div>
@@ -223,9 +324,18 @@ function App() {
           />
         )}
         <ASTview
-          key={selectedFile}
+          key={`${selectedFile}:${projectModel.view?.id ?? ''}`}
           root={rootNode}
+          structureMode={structureMode}
+          onChangeStructureMode={setStructureMode}
+          isConfiguredAvailable={projectModel.view?.status === 'ready'}
           onSelectNode={(node) => {
+            if (node.path && node.path !== selectedFile && filesByName[node.path]) {
+              selectFile(node.path);
+            }
+            if (node.range) {
+              setJumpRange(node.range);
+            }
             if (typeof node.line === 'number' && Number.isFinite(node.line)) {
               setJumpToLine(node.line);
               setJumpToken((value) => value + 1);

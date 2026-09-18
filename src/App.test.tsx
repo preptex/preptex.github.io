@@ -42,3 +42,64 @@ test('ignores malformed persisted AST options', () => {
   expect(screen.getByRole('region', { name: 'AST tree' })).toBeInTheDocument();
   window.localStorage.clear();
 });
+
+test('first upload opens Project Setup dialog, and closing permits inspecting sources', async () => {
+  render(<App />);
+  userEvent.upload(screen.getByLabelText('Upload files'), [
+    new File(['\\ref{missing:target}'], 'doc.tex', { type: 'text/plain' }),
+  ]);
+  // Dialog opens on first upload
+  expect(await screen.findByRole('dialog', { name: 'Project Settings' })).toBeInTheDocument();
+  // Dismiss dialog
+  fireEvent.click(screen.getByRole('button', { name: 'Continue inspecting sources' }));
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog', { name: 'Project Settings' })).not.toBeInTheDocument();
+  });
+  expect(screen.getByRole('region', { name: 'Project configuration summary' })).toBeInTheDocument();
+});
+
+test('runs independent reference analysis and shows findings in Log tab', async () => {
+  render(<App />);
+  userEvent.upload(screen.getByLabelText('Upload files'), [
+    new File(['\\ref{missing:label}'], 'main.tex', { type: 'text/plain' }),
+  ]);
+  // Wait for file to finish uploading and dialog to recommend entry
+  await waitFor(() => {
+    expect(screen.getByLabelText('Project Entry File')).toHaveValue('main.tex');
+  });
+  // Apply setup dialog so entry is configured
+  const applyBtn = screen.getByRole('button', { name: 'Apply Configuration' });
+  fireEvent.click(applyBtn);
+
+  // Check References button should be enabled
+  const checkRefBtn = await screen.findByRole('button', { name: 'Check References' });
+  await waitFor(() => expect(checkRefBtn).toBeEnabled());
+
+  // Run analysis
+  fireEvent.click(checkRefBtn);
+
+  // Automatically switches to log tab and shows missing-reference finding
+  expect(await screen.findByText(/missing-reference/i)).toBeInTheDocument();
+});
+
+test('toggles AST view structure and source modes', async () => {
+  render(<App />);
+  userEvent.upload(screen.getByLabelText('Upload files'), [
+    new File(['Hello world'], 'main.tex', { type: 'text/plain' }),
+  ]);
+  await waitFor(() => {
+    expect(screen.getByLabelText('Project Entry File')).toHaveValue('main.tex');
+  });
+  const applyBtn = screen.getByRole('button', { name: 'Apply Configuration' });
+  fireEvent.click(applyBtn);
+
+  // Toggle to source mode
+  const sourceModeBtn = await screen.findByRole('button', { name: 'Source' });
+  fireEvent.click(sourceModeBtn);
+  expect(screen.getByRole('button', { name: 'Source' })).toHaveClass('AstTreeModeBtn--active');
+
+  // Toggle back to structure mode
+  const structureModeBtn = screen.getByRole('button', { name: 'Structure' });
+  fireEvent.click(structureModeBtn);
+  expect(screen.getByRole('button', { name: 'Structure' })).toHaveClass('AstTreeModeBtn--active');
+});

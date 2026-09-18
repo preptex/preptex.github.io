@@ -6,7 +6,7 @@
   "dependencies": {
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.39.4",
-    "@preptex/core": "0.2.1",
+    "@preptex/core": "0.3.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
@@ -41,7 +41,9 @@
     }
   },
   "jest": {
-    "transformIgnorePatterns": ["node_modules/(?!(@preptex/core|@marijn/find-cluster-break)/)"]
+    "transformIgnorePatterns": [
+      "node_modules/(?!(@preptex/core|@marijn/find-cluster-break)/)"
+    ]
   },
   "browserslist": {
     "production": [

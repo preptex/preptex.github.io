@@ -7,11 +7,19 @@ export type CodeviewProps = {
   code: string;
   /** 1-based line number to scroll to (best-effort). */
   jumpToLine?: number;
-  /** Increment to force re-jump even if jumpToLine is unchanged. */
+  /** Inclusive UTF-16 start/end range to select and scroll to. */
+  jumpRange?: { start: number; end: number };
+  /** Increment to force re-jump even if jumpToLine or jumpRange is unchanged. */
   jumpToken?: number;
 };
 
-export default function CodeMirrorView({ filename, code, jumpToLine, jumpToken }: CodeviewProps) {
+export default function CodeMirrorView({
+  filename,
+  code,
+  jumpToLine,
+  jumpRange,
+  jumpToken,
+}: CodeviewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
 
@@ -52,25 +60,38 @@ export default function CodeMirrorView({ filename, code, jumpToLine, jumpToken }
     });
   }, [code]);
 
-  // Scroll to the requested 1-based line number.
+  // Scroll to and select the requested range or line
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    if (typeof jumpToLine !== 'number' || !Number.isFinite(jumpToLine)) return;
-
-    const lineNumber = Math.max(1, Math.floor(jumpToLine));
     const doc = view.state.doc;
     if (!doc.length) return;
 
-    const clampedLine = Math.min(lineNumber, doc.lines);
-    const line = doc.line(clampedLine);
-    const pos = line.from;
+    // 1. If jumpRange is provided, convert inclusive UTF-16 to CodeMirror half-open [from, to]
+    if (jumpRange && typeof jumpRange.start === 'number' && typeof jumpRange.end === 'number') {
+      const from = Math.max(0, Math.min(doc.length, jumpRange.start));
+      const to = Math.max(from, Math.min(doc.length, jumpRange.end + 1));
 
-    view.dispatch({
-      selection: { anchor: pos },
-      effects: EditorView.scrollIntoView(pos, { y: 'center' }),
-    });
-  }, [jumpToLine, jumpToken, code]);
+      view.dispatch({
+        selection: { anchor: from, head: to },
+        effects: EditorView.scrollIntoView(from, { y: 'center' }),
+      });
+      return;
+    }
+
+    // 2. Otherwise fall back to scrolling to 1-based line number
+    if (typeof jumpToLine === 'number' && Number.isFinite(jumpToLine)) {
+      const lineNumber = Math.max(1, Math.floor(jumpToLine));
+      const clampedLine = Math.min(lineNumber, doc.lines);
+      const line = doc.line(clampedLine);
+      const pos = line.from;
+
+      view.dispatch({
+        selection: { anchor: pos },
+        effects: EditorView.scrollIntoView(pos, { y: 'center' }),
+      });
+    }
+  }, [jumpToLine, jumpRange, jumpToken, code]);
 
   return (
     <div className="CodeviewContainer">

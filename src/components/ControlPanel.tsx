@@ -10,6 +10,13 @@ export type ControlPanelProps = {
   entryFile?: ProjectFilePath;
   canTransform: boolean;
   onTransform?: () => void;
+  onRunReferences?: () => void;
+  canRunReferences?: boolean;
+  referencesReason?: string;
+  onRunCommandUsage?: () => void;
+  canRunCommandUsage?: boolean;
+  commandUsageReason?: string;
+  isAnalyzing?: boolean;
 };
 
 export default function ControlPanel({
@@ -19,6 +26,13 @@ export default function ControlPanel({
   entryFile = '',
   onTransform,
   canTransform,
+  onRunReferences,
+  canRunReferences = false,
+  referencesReason,
+  onRunCommandUsage,
+  canRunCommandUsage = false,
+  commandUsageReason,
+  isAnalyzing = false,
 }: ControlPanelProps) {
   const outputPreview =
     options.outputName || (entryFile ? entryFile.replace(/\.tex$/i, '') + '.processed.tex' : '');
@@ -156,18 +170,49 @@ export default function ControlPanel({
           </div>
 
           <div className="ControlGroup ControlGroup--action">
-            <h3>Pipeline</h3>
-            {onTransform ? (
-              <button
-                type="button"
-                className="ControlButton"
-                onClick={onTransform}
-                disabled={!canTransform}
-                title={canTransform ? `Transform ${entryFile}` : 'Select a successfully parsed file first'}
-              >
-                Run
-              </button>
-            ) : null}
+            <h3>Operations</h3>
+            <div className="ControlSubgroup">
+              <h4>Analyses</h4>
+              <div className="ControlActionButtons">
+                {onRunReferences ? (
+                  <button
+                    type="button"
+                    className="ControlButton ControlButton--secondary"
+                    onClick={onRunReferences}
+                    disabled={!canRunReferences || isAnalyzing}
+                    title={referencesReason || 'Check references in configured project'}
+                  >
+                    Check References
+                  </button>
+                ) : null}
+                {onRunCommandUsage ? (
+                  <button
+                    type="button"
+                    className="ControlButton ControlButton--secondary"
+                    onClick={onRunCommandUsage}
+                    disabled={!canRunCommandUsage || isAnalyzing}
+                    title={commandUsageReason || 'Check command definitions and usage'}
+                  >
+                    Check Commands
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="ControlSubgroup">
+              <h4>Pipeline</h4>
+              {onTransform ? (
+                <button
+                  type="button"
+                  className="ControlButton"
+                  onClick={onTransform}
+                  disabled={!canTransform}
+                  title={canTransform ? `Transform ${entryFile}` : 'Select a successfully parsed file first'}
+                >
+                  Run
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>

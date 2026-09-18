@@ -302,12 +302,39 @@ select.ControlInput {
     opacity 140ms ease;
 }
 
-.ControlGroup--action .ControlButton {
+.ControlGroup--action .ControlButton:not(.ControlButton--secondary) {
   position: absolute;
   left: 18px;
   right: 10px;
   bottom: 18px;
   width: auto;
+}
+
+.ControlActionButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ControlButton--secondary {
+  position: static;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-title);
+  box-shadow: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ControlButton--secondary:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+  border-color: var(--color-action-border);
 }
 
 .ControlButton:hover:not(:disabled) {
