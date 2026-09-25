@@ -7,12 +7,22 @@ export interface ConfigurationSummaryProps {
   readonly configuration: ProjectConfigurationState;
   readonly view: ProjectView | null;
   readonly onOpenSettings: () => void;
+  readonly onOpenOperations?: () => void;
+  readonly onOpenLog?: () => void;
+  readonly logLabel?: string;
+  readonly hasLogError?: boolean;
+  readonly hasLogWarning?: boolean;
 }
 
 export function ConfigurationSummary({
   configuration,
   view,
   onOpenSettings,
+  onOpenOperations,
+  onOpenLog,
+  logLabel = 'Log',
+  hasLogError = false,
+  hasLogWarning = false,
 }: ConfigurationSummaryProps) {
   const { entryPath, traversal, conditionPolicy } = configuration;
 
@@ -55,7 +65,32 @@ export function ConfigurationSummary({
           <strong>Conditions:</strong> {policyDescription}
         </span>
       </div>
-      <div>
+      <div className="ConfigurationSummaryRight">
+        {onOpenOperations ? (
+          <button
+            type="button"
+            className="ConfigurationSummaryButton ConfigurationSummaryButton--primary"
+            onClick={onOpenOperations}
+          >
+            Operations...
+          </button>
+        ) : null}
+        {onOpenLog ? (
+          <button
+            type="button"
+            className={`ConfigurationSummaryButton ${
+              hasLogError
+                ? 'ConfigurationSummaryButton--error'
+                : hasLogWarning
+                ? 'ConfigurationSummaryButton--warning'
+                : ''
+            }`}
+            onClick={onOpenLog}
+            aria-label={logLabel}
+          >
+            {hasLogError ? '⚠ ' : ''}{logLabel}
+          </button>
+        ) : null}
         <button
           type="button"
           className="ConfigurationSummaryButton"

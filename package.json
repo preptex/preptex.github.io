@@ -29,6 +29,7 @@
     "test:ci": "react-scripts test --watchAll=false --runInBand",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx --max-warnings=0",
+    "snapshots": "node scripts/take-snapshots.js",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
