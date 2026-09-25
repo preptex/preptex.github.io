@@ -5,9 +5,13 @@ import App from './App';
 test('renders the main panes with Run disabled until a file is parsed', () => {
   render(<App />);
   expect(screen.getByRole('region', { name: 'Files' })).toBeInTheDocument();
-  expect(screen.getByRole('region', { name: 'Control panel' })).toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Status bar' })).not.toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Code' })).toBeInTheDocument();
   expect(screen.getByRole('region', { name: 'AST tree' })).toBeInTheDocument();
+
+  // Open Operations dialog
+  fireEvent.click(screen.getByRole('button', { name: 'Operations...' }));
+  expect(screen.getByRole('region', { name: 'Control panel' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
 });
 
@@ -16,22 +20,37 @@ test('uploads, transforms with the selected options, and selects the named outpu
   userEvent.upload(screen.getByLabelText('Upload files'), [
     new File(['Hello\n% hidden\nworld'], 'main.tex', { type: 'text/plain' }),
   ]);
+  // Dismiss setup dialog
+  fireEvent.click(await screen.findByRole('button', { name: 'Continue inspecting sources' }));
+
+  // Open operations
+  const opsBtn = await screen.findByRole('button', { name: 'Operations...' });
+  fireEvent.click(opsBtn);
+
   await waitFor(() => expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled());
   fireEvent.click(screen.getByLabelText('Suppress comments'));
   fireEvent.change(screen.getByLabelText('Output file name'), { target: { value: 'clean' } });
   fireEvent.click(screen.getByRole('button', { name: 'Run' }));
-  await waitFor(() => expect(screen.getByLabelText('Entry file')).toHaveValue('clean.processed.tex'));
+  expect(
+    await screen.findByText('clean.processed.tex', { selector: '.CodeviewFilename' })
+  ).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Download clean.processed.tex' })).toBeInTheDocument();
 });
 
 test('reports malformed source with a typed error and prevents running an old snapshot', async () => {
   render(<App />);
   userEvent.upload(screen.getByLabelText('Upload files'), new File(['\\begin{document}'], 'bad.tex'));
-  await screen.findByRole('tab', { name: 'Log (error)' });
-  expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
-  fireEvent.click(screen.getByRole('tab', { name: 'Log (error)' }));
+  // Malformed source opens Log dialog popup automatically
+  expect(await screen.findByRole('dialog', { name: 'Processing Log' })).toBeInTheDocument();
   expect(screen.getByRole('alert')).toHaveTextContent('bad.tex:');
   expect(screen.getByRole('alert')).toHaveTextContent('syntax-error');
+
+  // Close log dialog
+  fireEvent.click(screen.getByRole('button', { name: 'Close log dialog' }));
+
+  // Open operations to verify Run is disabled
+  fireEvent.click(screen.getByRole('button', { name: 'Operations...' }));
+  expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
 });
 
 test('ignores malformed persisted AST options', () => {
@@ -71,14 +90,19 @@ test('runs independent reference analysis and shows findings in Log tab', async 
   const applyBtn = screen.getByRole('button', { name: 'Apply Configuration' });
   fireEvent.click(applyBtn);
 
+  // Open operations
+  const opsBtn = await screen.findByRole('button', { name: 'Operations...' });
+  fireEvent.click(opsBtn);
+
   // Check References button should be enabled
   const checkRefBtn = await screen.findByRole('button', { name: 'Check References' });
   await waitFor(() => expect(checkRefBtn).toBeEnabled());
 
-  // Run analysis
+  // Run analysis - automatically closes modal and opens Log dialog
   fireEvent.click(checkRefBtn);
 
-  // Automatically switches to log tab and shows missing-reference finding
+  // Shows missing-reference finding in Log dialog
+  expect(await screen.findByRole('dialog', { name: 'Processing Log' })).toBeInTheDocument();
   expect(await screen.findByText(/missing-reference/i)).toBeInTheDocument();
 });
 
@@ -114,6 +138,10 @@ test('previews comment suppression and applies edits atomically (UI-14, UI-28)',
   });
   fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
 
+  // Open operations
+  const opsBtn = await screen.findByRole('button', { name: 'Operations...' });
+  fireEvent.click(opsBtn);
+
   // Click Preview Comments
   const previewCommentsBtn = await screen.findByRole('button', { name: /preview comments/i });
   fireEvent.click(previewCommentsBtn);
@@ -142,6 +170,10 @@ test('previews named environment removal and allows discarding (UI-27)', async (
     expect(screen.getByLabelText('Project Entry File')).toHaveValue('main.tex');
   });
   fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
+
+  // Open operations
+  const opsBtn = await screen.findByRole('button', { name: 'Operations...' });
+  fireEvent.click(opsBtn);
 
   // Enter environment names
   const envInput = await screen.findByPlaceholderText(/e\.g\. comment, C/i);
@@ -175,11 +207,30 @@ test('exports project and shows generated artifacts with ZIP download (UI-20)', 
   });
   fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
 
+  // Open operations
+  const opsBtn = await screen.findByRole('button', { name: 'Operations...' });
+  fireEvent.click(opsBtn);
+
   // Click Export Project
   const exportBtn = await screen.findByRole('button', { name: /export project/i });
   fireEvent.click(exportBtn);
 
   // Generated artifacts section appears
-  expect(await screen.findByText(/generated artifacts \(1\)/i)).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /download zip/i })).toBeInTheDocument();
+  const artifactHeadings = await screen.findAllByText(/generated artifacts \(1\)/i);
+  expect(artifactHeadings.length).toBeGreaterThan(0);
+  expect(screen.getAllByRole('button', { name: /download zip/i }).length).toBeGreaterThan(0);
+});
+
+test('opens and closes log popup via Log button in toolbar', async () => {
+  render(<App />);
+  // Bottom panel is completely removed
+  expect(screen.queryByRole('region', { name: 'Status bar' })).not.toBeInTheDocument();
+
+  // Open log dialog via Log button in ConfigurationSummary
+  fireEvent.click(screen.getByRole('button', { name: 'Log' }));
+  expect(screen.getByRole('dialog', { name: 'Processing Log' })).toBeInTheDocument();
+
+  // Close log dialog via Close button
+  fireEvent.click(screen.getByRole('button', { name: 'Close log dialog' }));
+  expect(screen.queryByRole('dialog', { name: 'Processing Log' })).not.toBeInTheDocument();
 });

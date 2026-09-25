@@ -158,6 +158,8 @@
   border-bottom: 1px solid #e2e8f0;
   font-size: 0.8125rem;
   color: #475569;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .ConfigurationSummaryLeft {
@@ -191,6 +193,13 @@
   color: #991b1b;
 }
 
+.ConfigurationSummaryRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .ConfigurationSummaryButton {
   padding: 4px 10px;
   border-radius: 4px;
@@ -200,8 +209,50 @@
   font-size: 0.75rem;
   font-weight: 500;
   cursor: pointer;
+  transition: all 120ms ease;
+  white-space: nowrap;
 }
 
 .ConfigurationSummaryButton:hover {
   background: #f1f5f9;
 }
+
+.ConfigurationSummaryButton--primary {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+  font-weight: 600;
+}
+
+.ConfigurationSummaryButton--primary:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
+.ConfigurationSummaryButton--error {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.ConfigurationSummaryButton--error:hover {
+  background: #fee2e2;
+  border-color: #dc2626;
+  color: #991b1b;
+}
+
+.ConfigurationSummaryButton--warning {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #b45309;
+  font-weight: 600;
+}
+
+.ConfigurationSummaryButton--warning:hover {
+  background: #fef3c7;
+  border-color: #d97706;
+  color: #92400e;
+}
+

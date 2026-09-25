@@ -3,7 +3,7 @@ import type { TransformedFile } from '@preptex/core';
 import type { FilesMap } from './types/files';
 import './App.css';
 
-import { ASTview, Codeview, ControlPanel, Filetree, LogPanel } from './components';
+import { ASTview, Codeview, Filetree, LogDialog, OperationsDialog } from './components';
 import { ProjectSetupDialog } from './components/ProjectSetupDialog';
 import { ConfigurationSummary } from './components/ConfigurationSummary';
 import { EditPreviewDialog } from './components/EditPreviewDialog';
@@ -25,7 +25,8 @@ function App() {
   const [jumpToLine, setJumpToLine] = useState<number | undefined>(undefined);
   const [jumpRange, setJumpRange] = useState<{ start: number; end: number } | undefined>(undefined);
   const [jumpToken, setJumpToken] = useState(0);
-  const [bottomTab, setBottomTab] = useState<'control' | 'log'>('control');
+  const [isLogOpen, setIsLogOpen] = useState(false);
+  const [isOperationsOpen, setIsOperationsOpen] = useState(false);
   const [structureMode, setStructureMode] = useState<'configured' | 'source'>('configured');
   const [isSetupOpen, setIsSetupOpen] = useState(false);
   const hasImportedRef = useRef(false);
@@ -63,6 +64,60 @@ function App() {
       setIsSetupOpen(true);
     }
   }, [fileNames]);
+
+  // Demo / Snapshot URL parameter support for visual verification
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const demo = params.get('demo');
+    if (demo === 'sample' && fileNames.length === 0) {
+      hasImportedRef.current = true;
+      upsertTextFiles({
+        'main.tex': `\\documentclass{article}
+\\usepackage{amsmath}
+\\begin{document}
+\\title{PrepTeX Project Workspace}
+\\author{Narek Bojikian}
+\\maketitle
+
+% Main section
+\\section{Introduction}
+This is a sample document demonstrating PrepTeX processing.
+See section \\ref{sec:methods} for details.
+
+\\ifdraft
+% Draft notes:
+Draft notice: work in progress.
+\\else
+Final published version.
+\\fi
+
+\\begin{comment}
+Internal development comment to remove.
+\\end{comment}
+
+\\section{Methods}\\label{sec:methods}
+Reference to \\ref{sec:missing}.
+\\end{document}
+`,
+      });
+      selectFile('main.tex');
+      projectConfig.commitConfiguration({
+        entryPath: 'main.tex',
+        traversal: 'project',
+        conditionPolicy: { mode: 'source-with-overrides', overrides: { draft: true } },
+      });
+      const state = params.get('state');
+      if (state === 'operations') {
+        setIsOperationsOpen(true);
+      } else if (state === 'log' || state === 'bottom-log') {
+        setIsLogOpen(true);
+        setTimeout(() => {
+          operations.runReferences();
+        }, 100);
+      }
+    }
+  }, [fileNames.length, selectFile, upsertTextFiles, projectConfig, operations]);
 
   const { options, setOptions } = useControl();
 
@@ -142,7 +197,7 @@ function App() {
   const onTransform = () => {
     const outputs = transform();
     if (!outputs) {
-      setBottomTab('log');
+      setIsLogOpen(true);
       return;
     }
     addArtifacts(outputs.map((out) => ({ path: out.path, source: out.source })));
@@ -162,18 +217,26 @@ function App() {
     removeFile(name);
   };
 
-  const appStyle: React.CSSProperties & { '--ast-pane-col': string } = {
-    '--ast-pane-col': astPaneCol,
-  };
-
   const findingsCount = operations.result?.findings.length ?? 0;
   const diagnosticsCount = coreRun.diagnostics.length;
   const hasError = Boolean(projectModel.error || operations.error || coreRun.error);
-  const logTabLabel = hasError
+  const logButtonLabel = hasError
     ? 'Log (error)'
     : diagnosticsCount + findingsCount > 0
     ? `Log (${diagnosticsCount + findingsCount})`
     : 'Log';
+
+  useEffect(() => {
+    if (hasError) {
+      setIsLogOpen(true);
+    }
+  }, [hasError]);
+
+  const appStyle: React.CSSProperties & {
+    '--ast-pane-col': string;
+  } = {
+    '--ast-pane-col': astPaneCol,
+  };
 
   return (
     <div className="App" style={appStyle}>
@@ -184,6 +247,88 @@ function App() {
         configuration={projectConfig}
         onApply={projectConfig.commitConfiguration}
         detectedConditions={projectModel.detectedConditions}
+      />
+
+      <OperationsDialog
+        isOpen={isOperationsOpen}
+        onClose={() => setIsOperationsOpen(false)}
+        options={options}
+        onChange={setOptions}
+        entryFile={effectiveEntry}
+        availableIfConditions={
+          projectModel.detectedConditions.length > 0
+            ? projectModel.detectedConditions
+            : coreRun.declaredConditions
+        }
+        onTransform={() => {
+          onTransform();
+          setIsOperationsOpen(false);
+        }}
+        canTransform={canTransform}
+        onRunReferences={() => {
+          operations.runReferences();
+          setIsOperationsOpen(false);
+          setIsLogOpen(true);
+        }}
+        canRunReferences={operations.checkReferencesCapability().eligible}
+        referencesReason={operations.checkReferencesCapability().reasons[0]?.message}
+        onRunCommandUsage={() => {
+          operations.runCommandUsage();
+          setIsOperationsOpen(false);
+          setIsLogOpen(true);
+        }}
+        canRunCommandUsage={operations.checkCommandUsageCapability().eligible}
+        commandUsageReason={operations.checkCommandUsageCapability().reasons[0]?.message}
+        isAnalyzing={operations.running}
+        onPreviewCommentSuppression={(target, suppressCommentEnvironments) => {
+          operations.planTransformation({
+            operation: 'suppress-comments',
+            options: {
+              target,
+              suppressCommentEnvironments,
+            },
+          });
+          setIsOperationsOpen(false);
+          setIsEditPreviewOpen(true);
+        }}
+        onPreviewRemoveEnvironments={(names, target) => {
+          operations.planTransformation({
+            operation: 'remove-environments',
+            options: {
+              target,
+              names,
+            },
+          });
+          setIsOperationsOpen(false);
+          setIsEditPreviewOpen(true);
+        }}
+        onExportProject={(conditions, inputs) => {
+          operations.planTransformation({
+            operation: 'export-project',
+            options: {
+              conditions,
+              inputs,
+              suppressComments: options.suppressComments,
+            },
+          });
+        }}
+        artifacts={operations.artifacts}
+        onDownloadZip={() => {
+          if (operations.artifacts.length > 0) {
+            downloadZipArchive(
+              operations.artifacts.map((a) => ({ path: a.path, content: a.source })),
+              'preptex-export.zip',
+            );
+          }
+        }}
+        onDownloadArtifact={(art) => {
+          const blob = new Blob([art.source], { type: 'text/plain;charset=utf-8' });
+          downloadBlob(blob, art.path);
+        }}
+        onSelectArtifact={(art) => {
+          setSelectedArtifact(art);
+          setIsOperationsOpen(false);
+        }}
       />
 
       <EditPreviewDialog
@@ -217,132 +362,34 @@ function App() {
         />
       </div>
 
-      <div className="AppCell AppCell--leftBottom">
-        <div className="BottomTabs" role="tablist" aria-label="Bottom panel">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={bottomTab === 'control'}
-            aria-controls="bottom-panel-control"
-            className={bottomTab === 'control' ? 'BottomTab BottomTab--active' : 'BottomTab'}
-            onClick={() => setBottomTab('control')}
-          >
-            Control Panel
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={bottomTab === 'log'}
-            aria-controls="bottom-panel-log"
-            className={bottomTab === 'log' ? 'BottomTab BottomTab--active' : 'BottomTab'}
-            onClick={() => setBottomTab('log')}
-          >
-            {logTabLabel}
-          </button>
-        </div>
-
-        <div className={`BottomTabPanel BottomTabPanel--${bottomTab}`}>
-          {bottomTab === 'control' ? (
-            <div id="bottom-panel-control" role="tabpanel" aria-label="Control Panel">
-              <ControlPanel
-                options={options}
-                onChange={setOptions}
-                entryFile={effectiveEntry}
-                availableIfConditions={
-                  projectModel.detectedConditions.length > 0
-                    ? projectModel.detectedConditions
-                    : coreRun.declaredConditions
-                }
-                onTransform={onTransform}
-                canTransform={canTransform}
-                onRunReferences={() => {
-                  operations.runReferences();
-                  setBottomTab('log');
-                }}
-                canRunReferences={operations.checkReferencesCapability().eligible}
-                referencesReason={operations.checkReferencesCapability().reasons[0]?.message}
-                onRunCommandUsage={() => {
-                  operations.runCommandUsage();
-                  setBottomTab('log');
-                }}
-                canRunCommandUsage={operations.checkCommandUsageCapability().eligible}
-                commandUsageReason={operations.checkCommandUsageCapability().reasons[0]?.message}
-                isAnalyzing={operations.running}
-                onPreviewCommentSuppression={(target, suppressCommentEnvironments) => {
-                  operations.planTransformation({
-                    operation: 'suppress-comments',
-                    options: {
-                      target,
-                      suppressCommentEnvironments,
-                    },
-                  });
-                  setIsEditPreviewOpen(true);
-                }}
-                onPreviewRemoveEnvironments={(names, target) => {
-                  operations.planTransformation({
-                    operation: 'remove-environments',
-                    options: {
-                      target,
-                      names,
-                    },
-                  });
-                  setIsEditPreviewOpen(true);
-                }}
-                onExportProject={(conditions, inputs) => {
-                  operations.planTransformation({
-                    operation: 'export-project',
-                    options: {
-                      conditions,
-                      inputs,
-                      suppressComments: options.suppressComments,
-                    },
-                  });
-                }}
-                artifacts={operations.artifacts}
-                onDownloadZip={() => {
-                  if (operations.artifacts.length > 0) {
-                    downloadZipArchive(
-                      operations.artifacts.map((a) => ({ path: a.path, content: a.source })),
-                      'preptex-export.zip',
-                    );
-                  }
-                }}
-                onDownloadArtifact={(art) => {
-                  const blob = new Blob([art.source], { type: 'text/plain;charset=utf-8' });
-                  downloadBlob(blob, art.path);
-                }}
-                onSelectArtifact={(art) => {
-                  setSelectedArtifact(art);
-                }}
-              />
-            </div>
-          ) : (
-            <div id="bottom-panel-log" role="tabpanel" aria-label="Log">
-              <LogPanel
-                diagnostics={coreRun.diagnostics}
-                error={projectModel.error || operations.error || coreRun.error}
-                findings={operations.result?.findings}
-                isStale={operations.isStale}
-                onSelectLocation={(location) => {
-                  if (filesByName[location.path]) {
-                    setSelectedArtifact(null);
-                    selectFile(location.path);
-                  }
-                  setJumpRange(location.range);
-                  setJumpToLine(location.range.line);
-                  setJumpToken((val) => val + 1);
-                }}
-              />
-            </div>
-          )}
-        </div>
-      </div>
+      <LogDialog
+        isOpen={isLogOpen}
+        onClose={() => setIsLogOpen(false)}
+        diagnostics={coreRun.diagnostics}
+        error={projectModel.error || operations.error || coreRun.error}
+        findings={operations.result?.findings}
+        isStale={operations.isStale}
+        onSelectLocation={(location) => {
+          if (filesByName[location.path]) {
+            setSelectedArtifact(null);
+            selectFile(location.path);
+          }
+          setJumpRange(location.range);
+          setJumpToLine(location.range.line);
+          setJumpToken((val) => val + 1);
+        }}
+      />
 
       <div className="AppCell AppCell--middle">
         <ConfigurationSummary
           configuration={projectConfig}
           view={projectModel.view}
           onOpenSettings={() => setIsSetupOpen(true)}
+          onOpenOperations={() => setIsOperationsOpen(true)}
+          onOpenLog={() => setIsLogOpen(true)}
+          logLabel={logButtonLabel}
+          hasLogError={hasError}
+          hasLogWarning={diagnosticsCount + findingsCount > 0 && !hasError}
         />
         <Codeview
           filename={displayedFilename}

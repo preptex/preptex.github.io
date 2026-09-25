@@ -115,13 +115,13 @@ function TreeNode({ node, depth, selected, onSelect, onDownload, onRemove }: Tre
       >
         <button
           type="button"
-          className="ControlItem FiletreeItem"
+          className="FiletreeItem"
           onClick={toggleOrSelect}
           title={node.path}
           aria-expanded={isFolder ? open : undefined}
         >
           <span className="FiletreeChevron" aria-hidden="true">
-            {isFolder ? (open ? 'v' : '>') : ''}
+            {isFolder ? (open ? '▾' : '▸') : ''}
           </span>
           <span className={isFolder ? 'FiletreeName FiletreeName--folder' : 'FiletreeName'}>
             {isFolder ? node.name : shortenFilenameMiddle(node.name)}
@@ -131,7 +131,7 @@ function TreeNode({ node, depth, selected, onSelect, onDownload, onRemove }: Tre
         {!isFolder && onDownload ? (
           <button
             type="button"
-            className="ControlItem FiletreeAction"
+            className="FiletreeAction"
             aria-label={`Download ${node.path}`}
             title={`Download ${node.path}`}
             onClick={(e) => {
@@ -147,7 +147,7 @@ function TreeNode({ node, depth, selected, onSelect, onDownload, onRemove }: Tre
         {!isFolder && onRemove ? (
           <button
             type="button"
-            className="ControlItem FiletreeAction FiletreeAction--remove"
+            className="FiletreeAction FiletreeAction--remove"
             aria-label={`Remove ${node.path}`}
             title={`Remove ${node.path}`}
             onClick={(e) => {
@@ -156,7 +156,7 @@ function TreeNode({ node, depth, selected, onSelect, onDownload, onRemove }: Tre
               onRemove(node.path);
             }}
           >
-            <span aria-hidden="true">❌</span>
+            <span aria-hidden="true">✕</span>
           </button>
         ) : null}
       </div>
@@ -223,11 +223,23 @@ export default function Filetree({
       {uploadError ? <p role="alert">{uploadError}</p> : null}
       {onUploadFiles ? (
         <div className="FiletreeActions">
-          <button type="button" className="ControlItem FiletreeUpload" onClick={triggerPicker}>
-            Upload files...
+          <button
+            type="button"
+            className="FiletreeUpload"
+            onClick={triggerPicker}
+            title="Upload files"
+          >
+            <span className="FiletreeUploadIcon" aria-hidden="true">📄</span>
+            <span>Upload files...</span>
           </button>
-          <button type="button" className="ControlItem FiletreeUpload" onClick={triggerFolderPicker}>
-            Upload folder...
+          <button
+            type="button"
+            className="FiletreeUpload"
+            onClick={triggerFolderPicker}
+            title="Upload folder"
+          >
+            <span className="FiletreeUploadIcon" aria-hidden="true">📁</span>
+            <span>Upload folder...</span>
           </button>
           <input
             ref={inputRef}
