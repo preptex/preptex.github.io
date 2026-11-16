@@ -1,5 +1,5 @@
 import { isConfiguredContainerNode } from '@preptex/core';
-import type { ConfiguredNode, SourceToken } from '@preptex/core';
+import type { CoarseNode, CoarseTree, ConfiguredNode, SourceToken } from '@preptex/core';
 import type { LayoutNode, LayoutNodeKind, LayoutSectionLevel } from '../../types/LayoutNode';
 
 interface ConfiguredNodeInfo {
@@ -30,6 +30,112 @@ function assertNever(node: never): never {
 export class TreeLayoutBuilder {
   buildConfigured(rootNode: ConfiguredNode): LayoutNode {
     return this.convertConfigured(rootNode);
+  }
+
+  buildCoarse(coarseTree: CoarseTree): LayoutNode {
+    return this.convertCoarse(coarseTree.root);
+  }
+
+  private convertCoarse(node: CoarseNode): LayoutNode {
+    const primary = node.location.primary;
+    const line = primary?.range.line ?? node.projectedRange.line ?? 1;
+    const range = primary?.range;
+    const path = primary?.path;
+    const info = this.getCoarseNodeInfo(node);
+
+    return {
+      id: node.id,
+      ...(node.occurrenceKey ? { occurrenceKey: node.occurrenceKey } : {}),
+      location: node.location,
+      kind: info.kind,
+      icon: info.icon,
+      data: info.data,
+      label: info.label,
+      sublabel: info.sublabel,
+      sectionLevel: node.sectionLevel,
+      isStarred: node.starred,
+      editableName: node.editableName,
+      argumentInfo: node.argumentInfo,
+      previewText: node.previewText,
+      line,
+      range,
+      path,
+      strokeWidth: node.kind === 'root' || (node.kind === 'section' && node.sectionLevel === 1) ? 1.5 : 1,
+      strokeColor: node.kind === 'root' ? '#000' : undefined,
+      x: 0,
+      y: 0,
+      children: node.children.map((child) => this.convertCoarse(child)),
+    };
+  }
+
+  private getCoarseNodeInfo(node: CoarseNode): ConfiguredNodeInfo {
+    switch (node.kind) {
+      case 'root':
+        return { kind: 'root', icon: 'R', label: 'Root', sublabel: 'document' };
+      case 'section':
+        return {
+          kind: 'section',
+          icon: 'S',
+          data: node.name,
+          label: node.name || 'section',
+          sublabel:
+            getSectionLevelName(node.sectionLevel ?? 1) + (node.starred ? '*' : ''),
+          sectionLevel: node.sectionLevel ?? 1,
+          isStarred: node.starred,
+        };
+      case 'environment':
+        return {
+          kind: 'environment',
+          icon: 'E',
+          data: node.name,
+          label: node.name || 'env',
+          sublabel: 'environment',
+        };
+      case 'command':
+        return {
+          kind: 'command',
+          icon: '\\',
+          data: `${node.name}${node.starred ? '*' : ''}`,
+          label: `\\${node.name}${node.starred ? '*' : ''}`,
+          sublabel: 'command',
+          isStarred: node.starred,
+        };
+      case 'argument': {
+        const argKind = node.argumentInfo?.argKind ?? 'mandatory';
+        const label = node.previewText ? `${node.name} ${node.previewText}` : node.name;
+        return {
+          kind: 'argument',
+          icon: argKind === 'optional' ? '[]' : '{}',
+          data: node.previewText || node.name,
+          label,
+          sublabel: node.name,
+        };
+      }
+      case 'math':
+        return {
+          kind: 'math',
+          icon: 'M',
+          data: node.previewText || node.name,
+          label: node.name,
+          sublabel: 'math',
+        };
+      case 'group':
+        return {
+          kind: 'group',
+          icon: '{',
+          data: node.previewText || undefined,
+          label: 'group',
+          sublabel: 'group',
+        };
+      case 'text-block':
+        return {
+          kind: 'text-block',
+          icon: 'T',
+          data: node.previewText,
+          label: node.previewText || 'text',
+          sublabel: 'text-block',
+        };
+    }
   }
 
   buildSourceTokens(filePath: string, tokens: readonly SourceToken[]): LayoutNode {
@@ -136,6 +242,17 @@ export class TreeLayoutBuilder {
         };
       case 'group':
         return { kind: 'group', icon: '{', label: 'group', sublabel: 'group' };
+      case 'argument': {
+        const slotNum = node.slot + 1;
+        const slotTag = node.argKind === 'optional' ? `[#${slotNum}]` : `{#${slotNum}}`;
+        return {
+          kind: 'argument',
+          icon: node.argKind === 'optional' ? '[]' : '{}',
+          data: slotTag,
+          label: slotTag,
+          sublabel: node.argKind,
+        };
+      }
       case 'math':
         return {
           kind: 'math',

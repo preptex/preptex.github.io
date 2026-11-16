@@ -1,14 +1,18 @@
 import {
   applyProjectEdits,
+  buildCoarseViewTree,
   checkOperationCapability,
   createProjectSnapshot,
   createProjectSourceIndex,
+  extractProjectMetadata,
   getSelectedEnvironment,
   getSelectedNode,
   inspectProject,
+  inspectProjectCatalog,
   inspectProjectEnvironments,
   isConfiguredContainerNode,
   lookupProjectSource,
+  planCompositeTransformation,
   planTransformation,
   PrepTexError,
   PrepTexErrorCode,
@@ -27,10 +31,14 @@ import {
 import type {
   AnalysisRequest,
   AnalysisResult,
+  CoarseTree,
+  CoarseTreeOptions,
+  CompositeTransformationRequest,
   ConditionRealizationRequest,
   ConditionRealizationResult,
   ConfiguredContainerNode,
   ConfiguredNode,
+  CustomCommandSignature,
   EnvironmentInventory,
   EnvironmentSelection,
   InventoryRequest,
@@ -39,7 +47,9 @@ import type {
   OperationCapability,
   OperationFailure,
   OperationRequest,
+  ProjectCatalog,
   ProjectEditPlan,
+  ProjectMetadata,
   ProjectPipelineOptions,
   ProjectPipelineResult,
   ProjectSnapshot as CoreProjectSnapshot,
@@ -240,4 +250,38 @@ export function validateProjectEditPlanAdapter(
   } catch (err: unknown) {
     return { eligible: false, error: toProcessingError(err) };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 Adapters: Coarse Tree, Symbol Catalog, Metadata & Composite Edits
+// ---------------------------------------------------------------------------
+
+export function buildCoarseViewTreeAdapter(
+  view: ProjectView,
+  options?: CoarseTreeOptions,
+): CoarseTree {
+  return buildCoarseViewTree(view, options);
+}
+
+export function inspectProjectCatalogAdapter(
+  model: CoreProjectSnapshot | ProjectView,
+  options?: {
+    readonly scope?: SourceScope;
+    readonly customCommands?: readonly CustomCommandSignature[];
+  },
+): ProjectCatalog {
+  return inspectProjectCatalog(model, options);
+}
+
+export function extractProjectMetadataAdapter(
+  model: CoreProjectSnapshot | ProjectView,
+): ProjectMetadata {
+  return extractProjectMetadata(model);
+}
+
+export function planCompositeTransformationAdapter(
+  model: CoreProjectSnapshot | ProjectView,
+  request: CompositeTransformationRequest['options'],
+): TransformationResult {
+  return planCompositeTransformation(model, request);
 }

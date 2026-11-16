@@ -6,7 +6,11 @@ import './ProjectSetupDialog.css';
 export interface ConfigurationSummaryProps {
   readonly configuration: ProjectConfigurationState;
   readonly view: ProjectView | null;
+  readonly documentTitle?: string | null;
+  readonly undefinedCommandCount?: number;
   readonly onOpenSettings: () => void;
+  readonly onOpenCatalog?: () => void;
+  readonly onOpenMetadata?: () => void;
   readonly onOpenOperations?: () => void;
   readonly onOpenLog?: () => void;
   readonly logLabel?: string;
@@ -17,7 +21,11 @@ export interface ConfigurationSummaryProps {
 export function ConfigurationSummary({
   configuration,
   view,
+  documentTitle = null,
+  undefinedCommandCount = 0,
   onOpenSettings,
+  onOpenCatalog,
+  onOpenMetadata,
   onOpenOperations,
   onOpenLog,
   logLabel = 'Log',
@@ -81,6 +89,28 @@ export function ConfigurationSummary({
         </span>
       </div>
       <div className="ConfigurationSummaryRight">
+        {onOpenCatalog ? (
+          <button
+            type="button"
+            className={`ConfigurationSummaryButton ${
+              undefinedCommandCount > 0 ? 'ConfigurationSummaryButton--warning' : ''
+            }`}
+            onClick={onOpenCatalog}
+            title="Inspect commands, environments, conditions, labels, and citations"
+          >
+            Catalog{undefinedCommandCount > 0 ? ` (${undefinedCommandCount} undef)` : ''}
+          </button>
+        ) : null}
+        {onOpenMetadata ? (
+          <button
+            type="button"
+            className="ConfigurationSummaryButton"
+            onClick={onOpenMetadata}
+            title={documentTitle ? `Metadata: ${documentTitle}` : 'Inspect and edit document metadata'}
+          >
+            Metadata
+          </button>
+        ) : null}
         {onOpenOperations ? (
           <button
             type="button"

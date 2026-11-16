@@ -38,6 +38,15 @@ export type ControlPanelProps = {
   canExportProject?: boolean;
   exportReason?: string;
 
+  canComposePipeline?: boolean;
+  onRunCompositePipeline?: (config: {
+    readonly realizeConditions: boolean;
+    readonly suppressComments: boolean;
+    readonly suppressCommentEnvironments: boolean;
+    readonly removeEnvironments: readonly string[];
+    readonly finalExport: boolean;
+  }) => void;
+
   artifacts?: readonly GeneratedArtifact[];
   onDownloadZip?: () => void;
   onDownloadArtifact?: (artifact: GeneratedArtifact) => void;
@@ -66,6 +75,8 @@ export default function ControlPanel({
   onExportProject,
   canExportProject = false,
   exportReason,
+  canComposePipeline = false,
+  onRunCompositePipeline,
   artifacts = [],
   onDownloadZip,
   onDownloadArtifact,
@@ -76,6 +87,12 @@ export default function ControlPanel({
 
   const [envNamesText, setEnvNamesText] = useState('');
   const [envTarget, setEnvTarget] = useState<'selected' | 'artifact'>('selected');
+
+  const [compRealize, setCompRealize] = useState(true);
+  const [compSuppressComments, setCompSuppressComments] = useState(true);
+  const [compSuppressCommentEnvs, setCompSuppressCommentEnvs] = useState(false);
+  const [compRemoveEnvs, setCompRemoveEnvs] = useState('');
+  const [compFinalExport, setCompFinalExport] = useState(false);
 
   const outputPreview =
     options.outputName || (entryFile ? entryFile : 'main.tex');
@@ -424,6 +441,99 @@ export default function ControlPanel({
             </div>
           ) : null}
         </div>
+
+        {/* Card 4b: Composable Multi-Step Pipeline */}
+        {onRunCompositePipeline ? (
+          <div className="ControlCard ControlCard--composite">
+            <div className="ControlCardHeader">
+              <div className="ControlConditionsHeader">
+                <h3>Composable Pipeline</h3>
+                <span className="ControlPipelineBadge">Multi-step</span>
+              </div>
+              <p className="ControlSubtitle">
+                Chain steps into a single unified edit plan or final artifact bundle
+              </p>
+            </div>
+
+            <label className="ControlCheck">
+              <input
+                type="checkbox"
+                checked={compRealize}
+                onChange={(e) => setCompRealize(e.target.checked)}
+              />
+              <span>1. Realize Conditions</span>
+            </label>
+
+            <label className="ControlCheck">
+              <input
+                type="checkbox"
+                checked={compSuppressComments}
+                onChange={(e) => setCompSuppressComments(e.target.checked)}
+              />
+              <span>2. Suppress Comments</span>
+            </label>
+
+            {compSuppressComments ? (
+              <label className="ControlCheck">
+                <input
+                  type="checkbox"
+                  checked={compSuppressCommentEnvs}
+                  onChange={(e) => setCompSuppressCommentEnvs(e.target.checked)}
+                />
+                <span>Include comment environments in step 2</span>
+              </label>
+            ) : null}
+
+            <label className="ControlField" htmlFor="compositeEnvInput">
+              <span>3. Remove Environments (comma-separated, optional)</span>
+              <input
+                id="compositeEnvInput"
+                type="text"
+                className="ControlInput"
+                placeholder="e.g. draftnote, todo"
+                value={compRemoveEnvs}
+                onChange={(e) => setCompRemoveEnvs(e.target.value)}
+              />
+            </label>
+
+            <label className="ControlCheck">
+              <input
+                type="checkbox"
+                checked={compFinalExport}
+                onChange={(e) => setCompFinalExport(e.target.checked)}
+              />
+              <span>4. Final Artifact Export (inlined output instead of source edits)</span>
+            </label>
+
+            <div className="ControlPipelineAction">
+              <button
+                type="button"
+                className="ControlButton ControlButton--primary"
+                disabled={
+                  !canComposePipeline ||
+                  (!compRealize &&
+                    !compSuppressComments &&
+                    !compRemoveEnvs.trim() &&
+                    !compFinalExport)
+                }
+                onClick={() =>
+                  onRunCompositePipeline({
+                    realizeConditions: compRealize,
+                    suppressComments: compSuppressComments,
+                    suppressCommentEnvironments: compSuppressCommentEnvs,
+                    removeEnvironments: compRemoveEnvs
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                    finalExport: compFinalExport,
+                  })
+                }
+              >
+                {compFinalExport ? 'Run Composed Export' : 'Preview Composed Pipeline'}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {/* Card 5: Generated Artifacts (if available) */}
         {artifacts.length > 0 ? (

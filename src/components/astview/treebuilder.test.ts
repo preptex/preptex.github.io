@@ -1,4 +1,5 @@
 import {
+  buildCoarseViewTree,
   createProjectSnapshot,
   resolveProjectView,
 } from '@preptex/core';
@@ -51,4 +52,31 @@ test('buildSourceTokens creates layout hierarchy for raw source tokens', () => {
   expect(layout.children[0]?.path).toBe('main.tex');
   expect(layout.children.some((c) => c.kind === 'command' && c.data === 'emph')).toBe(true);
   expect(layout.children.some((c) => c.kind === 'comment')).toBe(true);
+});
+
+test('buildCoarse maps coarse tree sections, environments, commands, and argument child nodes', () => {
+  const snapshot = createProjectSnapshot([
+    {
+      path: 'main.tex',
+      version: 1,
+      source: '\\section{Intro}\nProse \\textbf{ignored} \\custom[opt]{Hello}\n\\begin{itemize}\\item One\\end{itemize}',
+    },
+  ]);
+  const view = resolveProjectView(snapshot, {
+    entryPath: 'main.tex',
+    customCommands: [{ name: 'custom', optionalArgs: 1, mandatoryArgs: 1 }],
+  });
+  expect(view.status).toBe('ready');
+  if (view.status !== 'ready') throw new Error('Expected ready view');
+
+  const coarse = buildCoarseViewTree(view);
+  const layout = new TreeLayoutBuilder().buildCoarse(coarse);
+  const nodes = flatten(layout);
+
+  expect(nodes.some((n) => n.kind === 'section' && n.data === 'Intro')).toBe(true);
+  expect(nodes.some((n) => n.kind === 'command' && n.data === 'custom')).toBe(true);
+  expect(nodes.some((n) => n.kind === 'argument' && n.sublabel === '[#1]')).toBe(true);
+  expect(nodes.some((n) => n.kind === 'argument' && n.sublabel === '{#2}')).toBe(true);
+  expect(nodes.some((n) => n.kind === 'environment' && n.data === 'itemize')).toBe(true);
+  expect(nodes.some((n) => n.kind === 'command' && n.data === 'textbf')).toBe(false);
 });

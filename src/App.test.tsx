@@ -245,3 +245,78 @@ test('opens and closes log popup via Log button in toolbar', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Close log dialog' }));
   expect(screen.queryByRole('dialog', { name: 'Processing Log' })).not.toBeInTheDocument();
 });
+
+test('supports Coarse tree, Catalog custom arg reparsing, Metadata edit, and Composable Pipeline', async () => {
+  render(<App />);
+  userEvent.upload(screen.getByLabelText('Upload files'), [
+    new File(
+      [
+        [
+          '\\newif\\ifdraft\\drafttrue',
+          '\\title{Original Title}',
+          '\\author{Alice}',
+          '\\section{Intro}',
+          '\\undefcall[opt]{mand}',
+          '% Comment to strip',
+          '\\ifdraft Draft \\fi',
+        ].join('\n'),
+      ],
+      'main.tex',
+      { type: 'text/plain' },
+    ),
+  ]);
+  await waitFor(() => {
+    expect(screen.getByLabelText('Project Entry File')).toHaveValue('main.tex');
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
+
+  const coarseBtn = await screen.findByRole('button', { name: 'Coarse' });
+  expect(coarseBtn).toHaveClass('AstTreeModeBtn--active');
+
+  // Open Catalog and assign 1 optional + 1 mandatory arg to \undefcall so it reparses
+  const catBtn = screen.getByRole('button', { name: /Catalog/i });
+  fireEvent.click(catBtn);
+  const catDialog = await screen.findByRole('dialog', {
+    name: /Project Symbol & Construct Catalog/i,
+  });
+  expect(within(catDialog).getByText('\\undefcall')).toBeInTheDocument();
+
+  fireEvent.change(
+    within(catDialog).getByLabelText('Optional arguments for \\undefcall'),
+    { target: { value: '1' } },
+  );
+  fireEvent.change(
+    within(catDialog).getByLabelText('Mandatory arguments for \\undefcall'),
+    { target: { value: '1' } },
+  );
+  fireEvent.click(within(catDialog).getByRole('button', { name: /Set Args & Reparse/i }));
+  fireEvent.click(within(catDialog).getByRole('button', { name: 'Close catalog dialog' }));
+
+  // Coarse tree should now display argument child nodes [#1] and {#2}
+  expect(await screen.findByText('[#1]')).toBeInTheDocument();
+  expect(screen.getByText('{#2}')).toBeInTheDocument();
+
+  // Open Metadata and edit Title
+  fireEvent.click(screen.getByRole('button', { name: 'Metadata' }));
+  const metaDialog = await screen.findByRole('dialog', {
+    name: /Document Metadata & Statistics/i,
+  });
+  expect(within(metaDialog).getByText('Original Title')).toBeInTheDocument();
+  fireEvent.click(within(metaDialog).getByRole('button', { name: 'Edit Title' }));
+  fireEvent.change(within(metaDialog).getByLabelText('Title value'), {
+    target: { value: 'New Title' },
+  });
+  fireEvent.click(within(metaDialog).getByRole('button', { name: 'Preview Title Edit' }));
+
+  const editPreview = await screen.findByRole('dialog', { name: /Edit Preview/i });
+  expect(within(editPreview).getByText('New Title')).toBeInTheDocument();
+  fireEvent.click(within(editPreview).getByRole('button', { name: /Discard/i }));
+
+  // Run Composable Pipeline in Operations
+  fireEvent.click(screen.getByRole('button', { name: 'Operations...' }));
+  const compBtn = await screen.findByRole('button', { name: /Preview Composed Pipeline/i });
+  fireEvent.click(compBtn);
+
+  const compPreview = await screen.findByRole('dialog', { name: /Edit Preview — Composed Pipeline/i });
+  expect(compPreview).toBeInTheDocument();
+});

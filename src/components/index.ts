@@ -5,4 +5,6 @@ export { default as Codeview } from './Codeview';
 export { default as LogPanel } from './LogPanel';
 export { default as LogDialog } from './LogDialog';
 export { default as OperationsDialog } from './OperationsDialog';
+export { default as CatalogDialog } from './CatalogDialog';
+export { default as MetadataDialog } from './MetadataDialog';
 export { default as TreeNode } from './astview/TreeNode';
