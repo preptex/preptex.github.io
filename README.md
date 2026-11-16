@@ -20,6 +20,23 @@ npm start
 The development server opens at http://localhost:3000. Files disappear on reload;
 only AST display preferences are stored in localStorage.
 
+## Local `@preptex/core` testing
+
+To test unpublished changes from the sibling `../core` checkout before publishing to npm:
+
+```sh
+npm run core:link    # builds ../core (@preptex/core) and links file:../core/core
+npm run core:build   # rebuilds ../core after further edits to core
+npm run core:status  # shows current package.json, lockfile, and symlink state
+npm run core:unlink  # restores the pinned npm registry version and lockfile
+```
+
+Pass `--core-dir <path>` (or set `PREPTEX_CORE_DIR`) if `core` is located elsewhere,
+or `npm run core:unlink -- --version <x.y.z>` to restore a newly published version.
+Versioned Git hooks in `.githooks/` block committing, pushing, or merging `package.json`
+or `package-lock.json` while locally linked (feature-branch `src/` commits remain allowed),
+and CI runs `npm run check:core-link` before building or deploying.
+
 ## Validation
 
 ```sh

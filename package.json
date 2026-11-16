@@ -23,6 +23,7 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
+    "prepare": "node scripts/setup-hooks.mjs",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
@@ -30,6 +31,11 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx --max-warnings=0",
     "snapshots": "node scripts/take-snapshots.js",
+    "core:build": "node scripts/core-link.mjs build",
+    "core:link": "node scripts/core-link.mjs link",
+    "core:unlink": "node scripts/core-link.mjs unlink",
+    "core:status": "node scripts/core-link.mjs status",
+    "check:core-link": "node scripts/core-link.mjs check",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

@@ -25,6 +25,9 @@
 - This is the browser website, not the core library repository.
 - Import only the public `@preptex/core` entry point. Do not deep-import private
   lexer/parser files or use a sibling checkout as a released `file:` dependency.
+  For temporary local testing against `../core`, use `npm run core:link` /
+  `npm run core:build` and always run `npm run core:unlink` before committing or
+  merging manifest/lockfile changes (enforced by `.githooks/` and CI `check:core-link`).
 - Pin PrepTeX to an exact version while it is in 0.x; update the lockfile together
   with the manifest and review its shipped docs for breaking changes.
 - Keep the existing React/CRA/CodeMirror stack unless changing it is part of the
