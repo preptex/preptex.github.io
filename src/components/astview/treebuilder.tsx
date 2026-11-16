@@ -125,6 +125,15 @@ export class TreeLayoutBuilder {
           sectionLevel: node.level,
           isStarred: node.starred,
         };
+      case 'command':
+        return {
+          kind: 'command',
+          icon: '\\',
+          data: node.name,
+          label: `\\${node.name}${node.starred ? '*' : ''}`,
+          sublabel: 'command',
+          isStarred: node.starred,
+        };
       case 'group':
         return { kind: 'group', icon: '{', label: 'group', sublabel: 'group' };
       case 'math':
