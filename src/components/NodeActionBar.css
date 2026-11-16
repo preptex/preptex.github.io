@@ -37,7 +37,8 @@
 .node-actions-group {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .action-form-inline {
@@ -54,6 +55,24 @@
   border-radius: 4px;
   font-size: 0.75rem;
   width: 110px;
+}
+
+.action-input--num {
+  width: 44px;
+  padding: 0.25rem 0.35rem;
+}
+
+.action-select {
+  width: auto;
+  min-width: 110px;
+}
+
+.action-mini-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  color: #cbd5e1;
 }
 
 .action-input:focus {
@@ -78,6 +97,33 @@
 
 .action-btn.rename:hover:not(:disabled) {
   background-color: #0369a1;
+}
+
+.action-btn.rename-all {
+  background-color: #0369a1;
+  color: #ffffff;
+}
+
+.action-btn.rename-all:hover:not(:disabled) {
+  background-color: #075985;
+}
+
+.action-btn.reparse {
+  background-color: #0d9488;
+  color: #ffffff;
+}
+
+.action-btn.reparse:hover:not(:disabled) {
+  background-color: #0f766e;
+}
+
+.action-btn.unwrap {
+  background-color: #d97706;
+  color: #ffffff;
+}
+
+.action-btn.unwrap:hover:not(:disabled) {
+  background-color: #b45309;
 }
 
 .action-btn.wrap {

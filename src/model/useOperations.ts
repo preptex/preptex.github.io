@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { PrepTexErrorCode } from '@preptex/core';
 import type {
   AnalysisResult,
+  CompositeTransformationRequest,
   ConditionRealizationRequest,
   ConditionRealizationResult,
   GeneratedArtifact,
@@ -15,6 +16,7 @@ import type {
 import {
   applyProjectEditsAdapter,
   checkOperationCapabilityAdapter,
+  planCompositeTransformationAdapter,
   planTransformationAdapter,
   realizeProjectConditionsAdapter,
   runAnalysisAdapter,
@@ -267,6 +269,20 @@ export function useOperations(
       return checkOperationCapabilityAdapter(snapshot, request);
     }
 
+    if (request.operation === 'refactor-symbols' || request.operation === 'compose-transformations') {
+      const model = view?.status === 'ready' ? view : snapshot;
+      if (!model) {
+        return {
+          eligible: false,
+          reasons: [{
+            code: 'wrong-model',
+            message: 'No project snapshot is available.',
+          }],
+        };
+      }
+      return checkOperationCapabilityAdapter(model, request);
+    }
+
     if (!view) {
       return {
         eligible: false,
@@ -281,12 +297,22 @@ export function useOperations(
 
   const planTransformation = useCallback((request: TransformationRequest): TransformationResult | null => {
     const isSnapshotOp = request.operation === 'realize-conditions';
-    const model = isSnapshotOp ? snapshot : view;
+    const isFlexibleModel =
+      request.operation === 'refactor-symbols' || request.operation === 'compose-transformations';
+    const readyView = view?.status === 'ready' ? view : null;
+    const effectiveRequest: TransformationRequest =
+      request.operation === 'refactor-symbols' && !readyView && request.options.target !== 'artifact'
+        ? {
+            ...request,
+            options: { ...request.options, target: 'source' },
+          }
+        : request;
+    const model = isSnapshotOp ? snapshot : isFlexibleModel ? (readyView ?? snapshot) : view;
     if (!model) return null;
 
     setState((prev) => ({ ...prev, transformationRunning: true, transformationError: null }));
     try {
-      const result = planTransformationAdapter(model, request);
+      const result = planTransformationAdapter(model, effectiveRequest);
       setState((prev) => ({
         ...prev,
         transformationRunning: false,
@@ -294,7 +320,39 @@ export function useOperations(
         pendingEditPlan: result.editPlan,
         artifacts: result.artifacts,
         editPlanSnapshotId: snapshot?.id ?? null,
-        editPlanViewId: isSnapshotOp ? null : (view?.id ?? null),
+        editPlanViewId: model.kind === 'view' ? model.id : null,
+        transformationError: null,
+      }));
+      return result;
+    } catch (err: unknown) {
+      setState((prev) => ({
+        ...prev,
+        transformationRunning: false,
+        transformationResult: null,
+        pendingEditPlan: null,
+        transformationError: toProcessingError(err),
+      }));
+      return null;
+    }
+  }, [snapshot, view]);
+
+  const planCompositeTransformation = useCallback((
+    options: CompositeTransformationRequest['options'],
+  ): TransformationResult | null => {
+    const model = view?.status === 'ready' ? view : snapshot;
+    if (!model) return null;
+
+    setState((prev) => ({ ...prev, transformationRunning: true, transformationError: null }));
+    try {
+      const result = planCompositeTransformationAdapter(model, options);
+      setState((prev) => ({
+        ...prev,
+        transformationRunning: false,
+        transformationResult: result,
+        pendingEditPlan: result.editPlan,
+        artifacts: result.artifacts,
+        editPlanSnapshotId: snapshot?.id ?? null,
+        editPlanViewId: result.editPlan?.provenance.viewId ?? null,
         transformationError: null,
       }));
       return result;
@@ -396,6 +454,7 @@ export function useOperations(
     realizeConditions,
     checkTransformationCapability,
     planTransformation,
+    planCompositeTransformation,
     applyPendingEdits,
     discardPendingEdits,
     clearTransformationResult,

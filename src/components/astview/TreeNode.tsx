@@ -4,6 +4,7 @@ import { LayoutNode } from '../../types/LayoutNode';
 interface TreeNodeProps {
   node: LayoutNode;
   onSelectNode?: (node: LayoutNode) => void;
+  selectedNodeKey?: string | null;
 }
 
 function clamp(value = '', max = 64): string {
@@ -11,6 +12,9 @@ function clamp(value = '', max = 64): string {
 }
 
 function getDisplayData(node: LayoutNode): string {
+  if (node.kind === 'argument') {
+    return clamp(node.previewText ?? (node.data && node.data !== node.sublabel ? node.data : ''));
+  }
   return clamp(node.data || '');
 }
 
@@ -39,6 +43,7 @@ function getSectionLevelName(level?: number): string {
 
 function getDisplayType(node: LayoutNode): string {
   if (node.kind === 'section') return getSectionLevelName(node.sectionLevel);
+  if (node.kind === 'argument' && node.sublabel) return node.sublabel;
   return node.kind;
 }
 
@@ -46,20 +51,21 @@ function getStarLabel(node: LayoutNode): string {
   return node.kind === 'command' ? 'Starred command' : 'Starred section';
 }
 
-export default function TreeNode({ node, onSelectNode }: TreeNodeProps) {
+export default function TreeNode({ node, onSelectNode, selectedNodeKey }: TreeNodeProps) {
   const [open, setOpen] = useState(true);
   const isFolder = Boolean(node.children?.length);
   const displayData = getDisplayData(node);
   const displayType = getDisplayType(node);
+  const isSelected = Boolean(selectedNodeKey && node.occurrenceKey === selectedNodeKey);
 
   return (
     <div
       className="AstTreeNode"
       role="treeitem"
       aria-expanded={isFolder ? open : undefined}
-      aria-selected={false}
+      aria-selected={isSelected}
     >
-      <div className="AstTreeRow">
+      <div className={`AstTreeRow ${isSelected ? 'AstTreeRow--selected' : ''}`}>
         {isFolder ? (
           <button
             type="button"
@@ -102,7 +108,12 @@ export default function TreeNode({ node, onSelectNode }: TreeNodeProps) {
       {isFolder && open ? (
         <div className="AstTreeChildren">
           {node.children?.map((child) => (
-            <TreeNode key={child.id} node={child} onSelectNode={onSelectNode} />
+            <TreeNode
+              key={child.id}
+              node={child}
+              onSelectNode={onSelectNode}
+              selectedNodeKey={selectedNodeKey}
+            />
           ))}
         </div>
       ) : null}

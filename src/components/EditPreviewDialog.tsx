@@ -32,22 +32,28 @@ export const EditPreviewDialog: React.FC<EditPreviewDialogProps> = ({
 
   const edits = editPlan?.edits ?? [];
   const affectedFiles = Array.from(new Set(edits.map((e) => e.path)));
-  const isConditionRealization =
-    editPlan?.provenance.request.operation === 'realize-conditions';
+  const op = editPlan?.provenance.request.operation;
+  const isConditionRealization = op === 'realize-conditions';
+  const dialogTitle = isConditionRealization
+    ? 'Edit Preview — Condition Realization'
+    : op === 'refactor-symbols'
+    ? 'Edit Preview — Symbol Refactoring'
+    : op === 'compose-transformations'
+    ? 'Edit Preview — Composed Pipeline'
+    : 'Edit Preview';
+  const dialogSubtitle = isConditionRealization
+    ? 'Review condition directives and inactive branches to strip from source files.'
+    : op === 'compose-transformations'
+    ? 'Review unified multi-step edits composed back to your original source files.'
+    : 'Review proposed edits before applying them atomically to source files.';
 
   return (
     <div className="edit-preview-overlay" role="dialog" aria-modal="true" aria-labelledby="edit-preview-title">
       <div className="edit-preview-modal">
         <div className="edit-preview-header">
           <div>
-            <h2 id="edit-preview-title">
-              {isConditionRealization ? 'Edit Preview — Condition Realization' : 'Edit Preview'}
-            </h2>
-            <p className="edit-preview-subtitle">
-              {isConditionRealization
-                ? 'Review condition directives and inactive branches to strip from source files.'
-                : 'Review proposed edits before applying them atomically to source files.'}
-            </p>
+            <h2 id="edit-preview-title">{dialogTitle}</h2>
+            <p className="edit-preview-subtitle">{dialogSubtitle}</p>
           </div>
           <button
             type="button"

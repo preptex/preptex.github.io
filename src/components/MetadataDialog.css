@@ -1,0 +1,258 @@
+.MetadataDialogOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.MetadataDialog {
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text, #1e293b);
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 960px;
+  max-height: 88vh;
+  box-shadow: 0 24px 38px -6px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.MetadataDialogHeader {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface-soft, #f8fafc);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.MetadataTitleGroup h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.MetadataSubtitle {
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+.MetadataDialogClose {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 1.35rem;
+  color: var(--color-text-muted, #64748b);
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+}
+
+.MetadataDialogBody {
+  padding: 18px 20px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.MetadataLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 780px) {
+  .MetadataLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.MetadataSection h3 {
+  margin: 0 0 10px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #475569);
+}
+
+.MetadataCards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.MetadataFieldCard {
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--color-surface-soft, #f8fafc);
+}
+
+.MetadataFieldHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.MetadataFieldActions {
+  display: flex;
+  gap: 6px;
+}
+
+.MetadataFieldValue {
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.MetadataSubnote {
+  margin-top: 4px;
+  font-size: 0.76rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+.MetadataEmptyValue {
+  font-size: 0.82rem;
+  color: var(--color-text-muted, #64748b);
+  font-style: italic;
+}
+
+.MetadataEditForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.MetadataInputLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.MetadataInputLabel input,
+.MetadataInputLabel textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 6px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+}
+
+.MetadataFormButtons {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.MetadataBtn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  background: #ffffff;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.MetadataBtn--primary {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #ffffff;
+}
+
+.MetadataAuthorsParsed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px dashed var(--color-border, #cbd5e1);
+}
+
+.MetadataMiniHeading {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #64748b);
+}
+
+.MetadataAuthorChips,
+.MetadataPackageChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.MetadataAuthorChip,
+.MetadataLinkBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  background: #ffffff;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.MetadataAuthorNote {
+  color: var(--color-text-muted, #64748b);
+}
+
+.MetadataPreambleList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 0.82rem;
+}
+
+.MetadataInfoRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.MetadataStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.MetadataStatCard {
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--color-surface-soft, #f8fafc);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.MetadataStatLabel {
+  font-size: 0.72rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+.MetadataStatVal {
+  font-size: 0.95rem;
+  color: var(--color-title, #0f172a);
+}
+
+.MetadataDialogFooter {
+  padding: 12px 20px;
+  border-top: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface-soft, #f8fafc);
+  display: flex;
+  justify-content: flex-end;
+}

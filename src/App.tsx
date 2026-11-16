@@ -2,7 +2,16 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { FilesMap } from './types/files';
 import './App.css';
 
-import { ASTview, Codeview, Filetree, LogDialog, OperationsDialog } from './components';
+import {
+  ASTview,
+  CatalogDialog,
+  Codeview,
+  Filetree,
+  LogDialog,
+  MetadataDialog,
+  OperationsDialog,
+} from './components';
+import type { AstStructureMode } from './components/astview/ASTview';
 import { ProjectSetupDialog } from './components/ProjectSetupDialog';
 import { ConfigurationSummary } from './components/ConfigurationSummary';
 import { EditPreviewDialog } from './components/EditPreviewDialog';
@@ -14,7 +23,13 @@ import { useProjectModel } from './model/useProjectModel';
 import { useOperations } from './model/useOperations';
 import { TreeLayoutBuilder } from './components/astview/treebuilder';
 import type { LayoutNode } from './types/LayoutNode';
-import type { ConfiguredNode, GeneratedArtifact } from '@preptex/core';
+import type {
+  CompositeStepRequest,
+  ConfiguredNode,
+  GeneratedArtifact,
+  SourceLocation,
+  SymbolRefactorAction,
+} from '@preptex/core';
 import { selectProjectNodeAdapter, walkConfiguredNodesAdapter } from './services/core';
 import { downloadBlob, downloadZipArchive } from './services/zip';
 
@@ -31,7 +46,9 @@ function App() {
   const [jumpToken, setJumpToken] = useState(0);
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [isOperationsOpen, setIsOperationsOpen] = useState(false);
-  const [structureMode, setStructureMode] = useState<'configured' | 'source'>('configured');
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [isMetadataOpen, setIsMetadataOpen] = useState(false);
+  const [structureMode, setStructureMode] = useState<AstStructureMode>('coarse');
   const [isSetupOpen, setIsSetupOpen] = useState(false);
   const hasImportedRef = useRef(false);
 
@@ -78,17 +95,30 @@ function App() {
     if (demo === 'sample' && fileNames.length === 0) {
       hasImportedRef.current = true;
       upsertTextFiles({
-        'main.tex': `\\documentclass{article}
+        'main.tex': `\\documentclass[11pt]{article}
 \\usepackage{amsmath}
+\\newcommand{\\highlight}[1]{\\textbf{#1}}
+\\newenvironment{notebox}{\\begin{quote}}{\\end{quote}}
+\\newif\\ifdraft
+\\drafttrue
+\\title[PrepTeX Demo]{PrepTeX Phase 2 Workspace Demo}
+\\author{Narek Bojikian \\and Alex Researcher\\thanks{PrepTeX Lab}}
+\\date{November 2026}
 \\begin{document}
-\\title{PrepTeX Project Workspace}
-\\author{Narek Bojikian}
 \\maketitle
+\\begin{abstract}
+A concise summary of the structural TeX workspace.
+\\end{abstract}
 
 % Main section
-\\section{Introduction}
-This is a sample document demonstrating PrepTeX processing.
-See section \\ref{sec:methods} for details.
+\\section{Introduction}\\label{sec:intro}
+This is a \\highlight{sample} document demonstrating PrepTeX processing.
+Undefined call with arguments: \\badge[new]{ready}.
+See Section~\\ref{sec:methods} and work~\\cite{knuth84}.
+
+\\begin{notebox}
+Editable custom environment content.
+\\end{notebox}
 
 \\ifdraft
 % Draft notes:
@@ -103,6 +133,13 @@ Internal development comment to remove.
 
 \\section{Methods}\\label{sec:methods}
 Reference to \\ref{sec:missing}.
+\\begin{enumerate}
+\\item First item
+\\item Second item
+\\end{enumerate}
+\\begin{thebibliography}{9}
+\\bibitem{knuth84} Donald Knuth, The TeXbook.
+\\end{thebibliography}
 \\end{document}
 `,
       });
@@ -115,6 +152,10 @@ Reference to \\ref{sec:missing}.
       const state = params.get('state');
       if (state === 'operations') {
         setIsOperationsOpen(true);
+      } else if (state === 'catalog') {
+        setIsCatalogOpen(true);
+      } else if (state === 'metadata') {
+        setIsMetadataOpen(true);
       } else if (state === 'log' || state === 'bottom-log') {
         setIsLogOpen(true);
         setTimeout(() => {
@@ -133,6 +174,13 @@ Reference to \\ref{sec:missing}.
   const effectiveEntry = projectConfig.entryPath || selectedFile;
 
   const rootNode: LayoutNode | null = useMemo(() => {
+    if (structureMode === 'coarse') {
+      if (projectModel.coarseTree) {
+        return new TreeLayoutBuilder().buildCoarse(projectModel.coarseTree);
+      }
+      return null;
+    }
+
     if (structureMode === 'configured') {
       if (projectModel.view?.status === 'ready' && projectModel.view.root) {
         return new TreeLayoutBuilder().buildConfigured(projectModel.view.root);
@@ -145,7 +193,32 @@ Reference to \\ref{sec:missing}.
       return new TreeLayoutBuilder().buildSourceTokens(selectedFile, scannedFile.tokens);
     }
     return null;
-  }, [structureMode, projectModel.view, projectModel.snapshot, selectedFile]);
+  }, [structureMode, projectModel.coarseTree, projectModel.view, projectModel.snapshot, selectedFile]);
+
+  const jumpToAnalysisLocation = (location: SourceLocation) => {
+    if (filesByName[location.path]) {
+      setSelectedArtifact(null);
+      selectFile(location.path);
+    }
+    setJumpRange(location.range);
+    setJumpToLine(location.range.line);
+    setJumpToken((val) => val + 1);
+  };
+
+  const handleRefactorSymbol = (action: SymbolRefactorAction) => {
+    const res = operations.planTransformation({
+      operation: 'refactor-symbols',
+      options: {
+        target: projectModel.view?.status === 'ready' ? 'selected' : 'source',
+        actions: [action],
+      },
+    });
+    if (res?.editPlan) {
+      setIsCatalogOpen(false);
+      setIsMetadataOpen(false);
+      setIsEditPreviewOpen(true);
+    }
+  };
 
   const onDownload = (name: string) => {
     const text = filesByName[name] ?? '';
@@ -321,6 +394,64 @@ Reference to \\ref{sec:missing}.
         }}
         canExportProject={exportCapability.eligible}
         exportReason={exportCapability.reasons[0]?.message || viewBlockedReason}
+        canComposePipeline={Boolean(projectModel.snapshot && effectiveEntry)}
+        onRunCompositePipeline={(cfg) => {
+          const steps: CompositeStepRequest[] = [];
+          if (cfg.realizeConditions) {
+            steps.push({
+              operation: 'realize-conditions',
+              options: {
+                ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
+                traversal: projectConfig.traversal,
+                conditions: realizePolicy,
+                inputs: cfg.finalExport ? 'inline' : 'preserve',
+                stripDeclarationsAndSetters: options.stripDeclarationsAndSetters,
+              },
+            });
+          }
+          if (cfg.suppressComments) {
+            steps.push({
+              operation: 'suppress-comments',
+              options: {
+                target: 'selected',
+                suppressCommentEnvironments: cfg.suppressCommentEnvironments,
+              },
+            });
+          }
+          if (cfg.removeEnvironments.length > 0) {
+            steps.push({
+              operation: 'remove-environments',
+              options: {
+                target: 'selected',
+                names: cfg.removeEnvironments,
+              },
+            });
+          }
+          if (cfg.finalExport) {
+            steps.push({
+              operation: 'export-project',
+              options: {
+                inputs: options.inputHandling,
+                suppressComments: cfg.suppressComments,
+                suppressCommentEnvironments: cfg.suppressCommentEnvironments,
+              },
+            });
+          }
+          if (steps.length === 0) return;
+          const res = operations.planCompositeTransformation({
+            configuration: {
+              entryPath: effectiveEntry,
+              traversal: projectConfig.traversal,
+              conditions: projectConfig.conditionPolicy,
+              customCommands: projectConfig.customCommands,
+            },
+            steps,
+          });
+          if (res?.editPlan) {
+            setIsOperationsOpen(false);
+            setIsEditPreviewOpen(true);
+          }
+        }}
         artifacts={operations.artifacts}
         onDownloadZip={() => {
           if (operations.artifacts.length > 0) {
@@ -387,14 +518,31 @@ Reference to \\ref{sec:missing}.
         error={projectModel.error || operations.error || operations.transformationError}
         findings={operations.result?.findings}
         isStale={operations.isStale}
-        onSelectLocation={(location) => {
-          if (filesByName[location.path]) {
-            setSelectedArtifact(null);
-            selectFile(location.path);
-          }
-          setJumpRange(location.range);
-          setJumpToLine(location.range.line);
-          setJumpToken((val) => val + 1);
+        onSelectLocation={jumpToAnalysisLocation}
+      />
+
+      <CatalogDialog
+        isOpen={isCatalogOpen}
+        onClose={() => setIsCatalogOpen(false)}
+        catalog={projectModel.catalog}
+        customCommands={projectConfig.customCommands}
+        onUpsertCustomCommand={projectConfig.upsertCustomCommand}
+        onRemoveCustomCommand={projectConfig.removeCustomCommand}
+        onRefactorSymbol={handleRefactorSymbol}
+        onSelectLocation={(loc) => {
+          setIsCatalogOpen(false);
+          jumpToAnalysisLocation(loc);
+        }}
+      />
+
+      <MetadataDialog
+        isOpen={isMetadataOpen}
+        onClose={() => setIsMetadataOpen(false)}
+        metadata={projectModel.metadata}
+        onEditMetadata={(action) => handleRefactorSymbol(action)}
+        onSelectLocation={(loc) => {
+          setIsMetadataOpen(false);
+          jumpToAnalysisLocation(loc);
         }}
       />
 
@@ -402,7 +550,11 @@ Reference to \\ref{sec:missing}.
         <ConfigurationSummary
           configuration={projectConfig}
           view={projectModel.view}
+          documentTitle={projectModel.metadata?.title?.text ?? null}
+          undefinedCommandCount={projectModel.catalog?.usedUndefinedCommands.length ?? 0}
           onOpenSettings={() => setIsSetupOpen(true)}
+          onOpenCatalog={() => setIsCatalogOpen(true)}
+          onOpenMetadata={() => setIsMetadataOpen(true)}
           onOpenOperations={() => setIsOperationsOpen(true)}
           onOpenLog={() => setIsLogOpen(true)}
           logLabel={logButtonLabel}
@@ -468,6 +620,8 @@ Reference to \\ref{sec:missing}.
         )}
         <NodeActionBar
           selectedNode={selectedNode}
+          catalog={projectModel.catalog}
+          customCommands={projectConfig.customCommands}
           onRemoveNode={() => {
             if (!projectModel.view || !selectedNode) return;
             const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
@@ -492,6 +646,57 @@ Reference to \\ref{sec:missing}.
             });
             setIsEditPreviewOpen(true);
           }}
+          onRenameEnvironmentGlobally={(oldName, newName) => {
+            handleRefactorSymbol({
+              kind: 'rename-environment-globally',
+              oldName,
+              newName,
+            });
+          }}
+          onRenameCommand={(newName) => {
+            if (!projectModel.view || !selectedNode) return;
+            const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
+            operations.planTransformation({
+              operation: 'edit-nodes',
+              options: {
+                target: 'selected',
+                actions: [{ kind: 'rename-command', selection: sel, name: newName }],
+              },
+            });
+            setIsEditPreviewOpen(true);
+          }}
+          onRenameCommandGlobally={(oldName, newName) => {
+            handleRefactorSymbol({
+              kind: 'rename-command-globally',
+              oldName,
+              newName,
+            });
+          }}
+          onRenameSection={(sectionCommand, starred) => {
+            if (!projectModel.view || !selectedNode) return;
+            const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
+            operations.planTransformation({
+              operation: 'edit-nodes',
+              options: {
+                target: 'selected',
+                actions: [{ kind: 'rename-section', selection: sel, sectionCommand, starred }],
+              },
+            });
+            setIsEditPreviewOpen(true);
+          }}
+          onUnwrapNode={() => {
+            if (!projectModel.view || !selectedNode) return;
+            const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
+            operations.planTransformation({
+              operation: 'edit-nodes',
+              options: {
+                target: 'selected',
+                actions: [{ kind: 'unwrap-node', selection: sel }],
+              },
+            });
+            setIsEditPreviewOpen(true);
+          }}
+          onUpsertCustomCommand={projectConfig.upsertCustomCommand}
           onWrapNode={(wrapperName) => {
             if (!projectModel.view || !selectedNode) return;
             const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
@@ -509,10 +714,13 @@ Reference to \\ref{sec:missing}.
         <ASTview
           key={`${selectedFile}:${projectModel.view?.id ?? ''}`}
           root={rootNode}
+          selectedNodeKey={selectedNode?.occurrenceKey ?? null}
           structureMode={structureMode}
           onChangeStructureMode={setStructureMode}
           isConfiguredAvailable={projectModel.view?.status === 'ready'}
           viewIssue={projectModel.viewIssue}
+          coarseOptions={projectConfig.coarseTreeOptions}
+          onChangeCoarseOptions={projectConfig.setCoarseTreeOptions}
           onSelectNode={(node) => {
             if (node.path && node.path !== selectedFile && filesByName[node.path]) {
               setSelectedArtifact(null);

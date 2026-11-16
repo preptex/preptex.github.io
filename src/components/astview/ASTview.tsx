@@ -1,18 +1,23 @@
 import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { ProjectIssue } from '@preptex/core';
+import type { CoarseTreeOptions, ProjectIssue } from '@preptex/core';
 import { isLayoutNodeKind, LAYOUT_NODE_KINDS } from '../../types/LayoutNode';
 import type { LayoutNode, LayoutNodeKind } from '../../types/LayoutNode';
 import TreeNode from './TreeNode';
 
+export type AstStructureMode = 'coarse' | 'configured' | 'source';
+
 export interface ASTviewProps {
   root?: LayoutNode | null;
   onSelectNode?: (node: LayoutNode) => void;
+  selectedNodeKey?: string | null;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
-  structureMode?: 'configured' | 'source';
-  onChangeStructureMode?: (mode: 'configured' | 'source') => void;
+  structureMode?: AstStructureMode;
+  onChangeStructureMode?: (mode: AstStructureMode) => void;
   isConfiguredAvailable?: boolean;
   viewIssue?: ProjectIssue | null;
+  coarseOptions?: CoarseTreeOptions;
+  onChangeCoarseOptions?: (next: CoarseTreeOptions) => void;
 }
 
 const STORAGE_KEY = 'preptex.astview.options.v6';
@@ -116,8 +121,12 @@ function loadOptions(): AstViewOptions {
 function filterTree(
   node: LayoutNode,
   options: AstViewOptions,
-  structureMode: 'configured' | 'source',
+  structureMode: AstStructureMode,
 ): LayoutNode | null {
+  if (structureMode === 'coarse') {
+    return node;
+  }
+
   if (structureMode === 'source') {
     if (node.kind === 'space' && !options.visibleKinds.includes('space')) {
       return null;
@@ -163,12 +172,15 @@ function filterTree(
 export default function ASTview({
   root,
   onSelectNode,
+  selectedNodeKey = null,
   collapsed,
   onToggleCollapsed,
-  structureMode = 'configured',
+  structureMode = 'coarse',
   onChangeStructureMode,
   isConfiguredAvailable = true,
   viewIssue = null,
+  coarseOptions = {},
+  onChangeCoarseOptions,
 }: ASTviewProps) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [options, setOptions] = useState<AstViewOptions>(() => loadOptions());
@@ -293,12 +305,27 @@ export default function ASTview({
             <div className="AstTreeModeToggle" role="group" aria-label="Tree view mode">
               <button
                 type="button"
+                className={`AstTreeModeBtn ${structureMode === 'coarse' ? 'AstTreeModeBtn--active' : ''}`}
+                disabled={!isConfiguredAvailable}
+                onClick={() => onChangeStructureMode('coarse')}
+                title={
+                  isConfiguredAvailable
+                    ? 'Readable coarse document outline (sections, environments, commands, arguments)'
+                    : viewIssue
+                    ? `${viewIssue.code}: ${viewIssue.message}`
+                    : 'Configure an entry in Settings to enable coarse view'
+                }
+              >
+                Coarse
+              </button>
+              <button
+                type="button"
                 className={`AstTreeModeBtn ${structureMode === 'configured' ? 'AstTreeModeBtn--active' : ''}`}
                 disabled={!isConfiguredAvailable}
                 onClick={() => onChangeStructureMode('configured')}
                 title={
                   isConfiguredAvailable
-                    ? 'Configured document structure'
+                    ? 'Detailed configured document AST'
                     : viewIssue
                     ? `${viewIssue.code}: ${viewIssue.message}`
                     : 'Configure an entry in Settings to enable structure view'
@@ -332,117 +359,172 @@ export default function ASTview({
 
               {optionsOpen ? (
                 <div className="AstTreeOptions" role="dialog" aria-label="AST view options">
-                  <div className="AstTreeOptionsHeader">
-                    <div className="AstTreeOptionsTitle">Options</div>
-                    <button
-                      type="button"
-                      className="AstTreeOptionsReset"
-                      onClick={resetToDefault}
-                    >
-                      Reset
-                    </button>
-                  </div>
-
-                  <div className="AstTreeOptionsSection">
-                    <div className="AstTreeOptionsTitle">Node Types</div>
-                    <div className="AstTreeOptionCards">
-                      {DEFAULT_NODE_KINDS.map((kind) => {
-                        const selected = options.visibleKinds.includes(kind);
-                        return (
+                  {structureMode === 'coarse' ? (
+                    <>
+                      <div className="AstTreeOptionsHeader">
+                        <div className="AstTreeOptionsTitle">Coarse Tree Options</div>
+                        {onChangeCoarseOptions ? (
                           <button
-                            key={kind}
                             type="button"
-                            className={`AstTreeOptionCard ${
-                              selected ? 'AstTreeOptionCard--selected' : ''
-                            }`}
-                            onClick={() => toggleKind(kind)}
+                            className="AstTreeOptionsReset"
+                            onClick={() => onChangeCoarseOptions({})}
                           >
-                            {kind}
+                            Reset
                           </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="AstTreeOptionsSection">
-                    <div className="AstTreeOptionsTitle">Environments</div>
-                    <div className="AstTreeOptionCards">
-                      {options.environmentCards.map((environment) => {
-                        const selected = options.selectedEnvironments.includes(environment);
-                        const userDefined = options.userEnvironments.includes(environment);
-                        return (
-                          <button
-                            key={environment}
-                            type="button"
-                            className={`AstTreeOptionCard AstTreeCommandCard ${
-                              selected ? 'AstTreeOptionCard--selected' : ''
-                            }`}
-                            onClick={() => toggleEnvironment(environment)}
-                          >
-                            {userDefined ? (
-                              <span
-                                className="AstTreeCommandDelete"
-                                onClick={(event) => deleteUserEnvironment(event, environment)}
-                                aria-label={`Delete ${environment}`}
+                        ) : null}
+                      </div>
+                      <div className="AstTreeOptionsSection">
+                        <div className="AstTreeOptionCards">
+                          {(
+                            [
+                              ['includeSections', 'Sections', true],
+                              ['includeEnvironments', 'Environments', true],
+                              ['includeCustomAndUndefinedCommands', 'Custom/Undefined cmds', true],
+                              ['includeBuiltinCommands', 'Built-in cmds', false],
+                              ['includeArguments', 'Arguments', true],
+                              ['includeDisplayMath', 'Display math', false],
+                              ['includeMath', 'All math', false],
+                              ['includeGroups', 'Brace groups', false],
+                              ['includeTextBlocks', 'Text blocks', false],
+                            ] as const
+                          ).map(([key, label, fallback]) => {
+                            const selected = coarseOptions[key] ?? fallback;
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                className={`AstTreeOptionCard ${
+                                  selected ? 'AstTreeOptionCard--selected' : ''
+                                }`}
+                                onClick={() =>
+                                  onChangeCoarseOptions?.({
+                                    ...coarseOptions,
+                                    [key]: !selected,
+                                  })
+                                }
                               >
-                                x
-                              </span>
-                            ) : null}
-                            <span>{environment}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <form className="AstTreeCommandForm" onSubmit={addEnvironment}>
-                      <input
-                        value={newEnvironment}
-                        onChange={(event) => setNewEnvironment(event.target.value)}
-                        placeholder="Add environment..."
-                        aria-label="Add environment"
-                      />
-                      <button type="submit">Add</button>
-                    </form>
-                  </div>
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="AstTreeOptionsHeader">
+                        <div className="AstTreeOptionsTitle">Options</div>
+                        <button
+                          type="button"
+                          className="AstTreeOptionsReset"
+                          onClick={resetToDefault}
+                        >
+                          Reset
+                        </button>
+                      </div>
 
-                  <div className="AstTreeOptionsSection">
-                    <div className="AstTreeOptionsTitle">Commands</div>
-                    <div className="AstTreeOptionCards">
-                      {options.commandCards.map((command) => {
-                        const selected = options.selectedCommands.includes(command);
-                        const userDefined = options.userCommands.includes(command);
-                        return (
-                          <button
-                            key={command}
-                            type="button"
-                            className={`AstTreeOptionCard AstTreeCommandCard ${
-                              selected ? 'AstTreeOptionCard--selected' : ''
-                            }`}
-                            onClick={() => toggleCommand(command)}
-                          >
-                            {userDefined ? (
-                              <span
-                                className="AstTreeCommandDelete"
-                                onClick={(event) => deleteUserCommand(event, command)}
-                                aria-label={`Delete ${command}`}
+                      <div className="AstTreeOptionsSection">
+                        <div className="AstTreeOptionsTitle">Node Types</div>
+                        <div className="AstTreeOptionCards">
+                          {DEFAULT_NODE_KINDS.map((kind) => {
+                            const selected = options.visibleKinds.includes(kind);
+                            return (
+                              <button
+                                key={kind}
+                                type="button"
+                                className={`AstTreeOptionCard ${
+                                  selected ? 'AstTreeOptionCard--selected' : ''
+                                }`}
+                                onClick={() => toggleKind(kind)}
                               >
-                                x
-                              </span>
-                            ) : null}
-                            <span>\{command}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <form className="AstTreeCommandForm" onSubmit={addCommand}>
-                      <input
-                        value={newCommand}
-                        onChange={(event) => setNewCommand(event.target.value)}
-                        placeholder="Add command..."
-                        aria-label="Add command"
-                      />
-                      <button type="submit">Add</button>
-                    </form>
-                  </div>
+                                {kind}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="AstTreeOptionsSection">
+                        <div className="AstTreeOptionsTitle">Environments</div>
+                        <div className="AstTreeOptionCards">
+                          {options.environmentCards.map((environment) => {
+                            const selected = options.selectedEnvironments.includes(environment);
+                            const userDefined = options.userEnvironments.includes(environment);
+                            return (
+                              <button
+                                key={environment}
+                                type="button"
+                                className={`AstTreeOptionCard AstTreeCommandCard ${
+                                  selected ? 'AstTreeOptionCard--selected' : ''
+                                }`}
+                                onClick={() => toggleEnvironment(environment)}
+                              >
+                                {userDefined ? (
+                                  <span
+                                    className="AstTreeCommandDelete"
+                                    onClick={(event) => deleteUserEnvironment(event, environment)}
+                                    aria-label={`Delete ${environment}`}
+                                  >
+                                    x
+                                  </span>
+                                ) : null}
+                                <span>{environment}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <form className="AstTreeCommandForm" onSubmit={addEnvironment}>
+                          <input
+                            value={newEnvironment}
+                            onChange={(event) => setNewEnvironment(event.target.value)}
+                            placeholder="Add environment..."
+                            aria-label="Add environment"
+                          />
+                          <button type="submit">Add</button>
+                        </form>
+                      </div>
+
+                      <div className="AstTreeOptionsSection">
+                        <div className="AstTreeOptionsTitle">Commands</div>
+                        <div className="AstTreeOptionCards">
+                          {options.commandCards.map((command) => {
+                            const selected = options.selectedCommands.includes(command);
+                            const userDefined = options.userCommands.includes(command);
+                            return (
+                              <button
+                                key={command}
+                                type="button"
+                                className={`AstTreeOptionCard AstTreeCommandCard ${
+                                  selected ? 'AstTreeOptionCard--selected' : ''
+                                }`}
+                                onClick={() => toggleCommand(command)}
+                              >
+                                {userDefined ? (
+                                  <span
+                                    className="AstTreeCommandDelete"
+                                    onClick={(event) => deleteUserCommand(event, command)}
+                                    aria-label={`Delete ${command}`}
+                                  >
+                                    x
+                                  </span>
+                                ) : null}
+                                <span>\{command}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <form className="AstTreeCommandForm" onSubmit={addCommand}>
+                          <input
+                            value={newCommand}
+                            onChange={(event) => setNewCommand(event.target.value)}
+                            placeholder="Add command..."
+                            aria-label="Add command"
+                          />
+                          <button type="submit">Add</button>
+                        </form>
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : null}
             </div>
@@ -463,12 +545,16 @@ export default function ASTview({
       {collapsed ? null : (
         <div className="AstTreeList" role="tree">
           {filteredRoot ? (
-            <TreeNode node={filteredRoot} onSelectNode={onSelectNode} />
+            <TreeNode
+              node={filteredRoot}
+              onSelectNode={onSelectNode}
+              selectedNodeKey={selectedNodeKey}
+            />
           ) : (
             <div className="AstTreeEmpty">
               {root
                 ? 'No nodes match the current AST view options.'
-                : structureMode === 'configured' && viewIssue
+                : structureMode !== 'source' && viewIssue
                 ? `Structure unavailable (${viewIssue.code}): ${viewIssue.message}`
                 : 'Select a file to inspect its structure.'}
             </div>

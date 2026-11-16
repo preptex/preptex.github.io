@@ -1,4 +1,4 @@
-import type { NodeLocation, SourceRange } from '@preptex/core';
+import type { CoarseNode, NodeLocation, SourceRange } from '@preptex/core';
 
 export const LAYOUT_NODE_KINDS = [
   'root',
@@ -7,6 +7,8 @@ export const LAYOUT_NODE_KINDS = [
   'group',
   'math',
   'command',
+  'argument',
+  'text-block',
   'comment',
   'text',
   'space',
@@ -36,6 +38,9 @@ export interface LayoutNode {
   readonly sublabel?: string;
   readonly sectionLevel?: LayoutSectionLevel;
   readonly isStarred?: boolean;
+  readonly editableName?: boolean;
+  readonly argumentInfo?: CoarseNode['argumentInfo'];
+  readonly previewText?: string;
   readonly id: string;
   readonly occurrenceKey?: string;
   readonly location?: NodeLocation;

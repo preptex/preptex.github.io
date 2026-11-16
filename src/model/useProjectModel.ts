@@ -1,9 +1,12 @@
 import { useMemo, useRef } from 'react';
 import type {
+  CoarseTree,
   EnvironmentInventory,
   InventoryResult,
+  ProjectCatalog,
   ProjectFilePath,
   ProjectIssue,
+  ProjectMetadata,
   ProjectSnapshot as CoreProjectSnapshot,
   ProjectSourceChange,
   ProjectView,
@@ -12,8 +15,11 @@ import type {
 import type { FilesMap } from '../types/files';
 import type { ProjectConfigurationState } from './useProjectConfiguration';
 import {
+  buildCoarseViewTreeAdapter,
   createProjectSnapshotAdapter,
+  extractProjectMetadataAdapter,
   inspectProjectAdapter,
+  inspectProjectCatalogAdapter,
   inspectProjectEnvironmentsAdapter,
   resolveProjectViewAdapter,
   toProcessingError,
@@ -30,6 +36,9 @@ export interface ProjectModelResult {
   readonly detectedConditions: readonly string[];
   readonly inventory: InventoryResult | null;
   readonly envInventory: EnvironmentInventory | null;
+  readonly coarseTree: CoarseTree | null;
+  readonly catalog: ProjectCatalog | null;
+  readonly metadata: ProjectMetadata | null;
   readonly error: ProcessingError | null;
 }
 
@@ -163,12 +172,22 @@ export function useProjectModel(
         entryPath: config.entryPath,
         traversal: config.traversal,
         conditions: config.conditionPolicy,
+        ...(config.customCommands && config.customCommands.length > 0
+          ? { customCommands: config.customCommands }
+          : {}),
       });
       return { view: resolved, viewError: null };
     } catch (err: unknown) {
       return { view: null, viewError: toProcessingError(err) };
     }
-  }, [snapshot, config.entryPath, config.traversal, config.conditionPolicy, config.revision]);
+  }, [
+    snapshot,
+    config.entryPath,
+    config.traversal,
+    config.conditionPolicy,
+    config.customCommands,
+    config.revision,
+  ]);
 
   const viewIssue = useMemo<ProjectIssue | null>(() => {
     if (!view || view.status === 'ready') return null;
@@ -205,6 +224,41 @@ export function useProjectModel(
   }, [view, snapshot]);
 
   const isReady = view?.status === 'ready';
+
+  const coarseTree = useMemo<CoarseTree | null>(() => {
+    if (!view || view.status !== 'ready') return null;
+    try {
+      return buildCoarseViewTreeAdapter(view, config.coarseTreeOptions);
+    } catch {
+      return null;
+    }
+  }, [view, config.coarseTreeOptions]);
+
+  const catalog = useMemo<ProjectCatalog | null>(() => {
+    const model = view?.status === 'ready' ? view : snapshot;
+    if (!model) return null;
+    try {
+      return inspectProjectCatalogAdapter(
+        model,
+        config.customCommands && config.customCommands.length > 0
+          ? { customCommands: config.customCommands }
+          : undefined,
+      );
+    } catch {
+      return null;
+    }
+  }, [view, snapshot, config.customCommands]);
+
+  const metadata = useMemo<ProjectMetadata | null>(() => {
+    const model = view?.status === 'ready' ? view : snapshot;
+    if (!model) return null;
+    try {
+      return extractProjectMetadataAdapter(model);
+    } catch {
+      return null;
+    }
+  }, [view, snapshot]);
+
   const error = viewError || snapshotError;
 
   return {
@@ -216,6 +270,9 @@ export function useProjectModel(
     detectedConditions,
     inventory,
     envInventory,
+    coarseTree,
+    catalog,
+    metadata,
     error,
   };
 }

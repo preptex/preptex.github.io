@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ConditionPolicy, ProjectFilePath } from '@preptex/core';
+import type {
+  CoarseTreeOptions,
+  ConditionPolicy,
+  CustomCommandSignature,
+  ProjectFilePath,
+} from '@preptex/core';
 import type { FilesMap } from '../types/files';
 
 export interface ProjectConfigurationState {
   readonly entryPath: ProjectFilePath | null;
   readonly traversal: 'project' | 'file-only';
   readonly conditionPolicy: ConditionPolicy;
+  readonly customCommands: readonly CustomCommandSignature[];
+  readonly coarseTreeOptions: CoarseTreeOptions;
   readonly revision: number;
 }
 
@@ -13,6 +20,8 @@ export const DEFAULT_CONFIGURATION: ProjectConfigurationState = {
   entryPath: null,
   traversal: 'project',
   conditionPolicy: { mode: 'source' },
+  customCommands: [],
+  coarseTreeOptions: {},
   revision: 1,
 };
 
@@ -57,6 +66,46 @@ export function useProjectConfiguration(
     }));
   }, []);
 
+  const upsertCustomCommand = useCallback((signature: CustomCommandSignature) => {
+    const cleanName = signature.name.trim().replace(/^\\+/, '');
+    if (!cleanName) return;
+    const normalized: CustomCommandSignature = {
+      ...signature,
+      name: cleanName,
+      optionalArgs: Math.max(0, Math.min(9, Math.trunc(signature.optionalArgs ?? 0))),
+      mandatoryArgs: Math.max(0, Math.min(9, Math.trunc(signature.mandatoryArgs))),
+    };
+    setState((prev) => {
+      const filtered = prev.customCommands.filter((c) => c.name !== cleanName);
+      return {
+        ...prev,
+        customCommands: [...filtered, normalized].sort((a, b) => a.name.localeCompare(b.name)),
+        revision: prev.revision + 1,
+      };
+    });
+  }, []);
+
+  const removeCustomCommand = useCallback((name: string) => {
+    const cleanName = name.trim().replace(/^\\+/, '');
+    setState((prev) => {
+      const next = prev.customCommands.filter((c) => c.name !== cleanName);
+      if (next.length === prev.customCommands.length) return prev;
+      return {
+        ...prev,
+        customCommands: next,
+        revision: prev.revision + 1,
+      };
+    });
+  }, []);
+
+  const setCoarseTreeOptions = useCallback((coarseTreeOptions: CoarseTreeOptions) => {
+    setState((prev) => ({
+      ...prev,
+      coarseTreeOptions,
+      revision: prev.revision + 1,
+    }));
+  }, []);
+
   const commitConfiguration = useCallback((
     update: Partial<Omit<ProjectConfigurationState, 'revision'>>,
   ) => {
@@ -97,6 +146,9 @@ export function useProjectConfiguration(
     setEntryPath,
     setTraversal,
     setConditionPolicy,
+    upsertCustomCommand,
+    removeCustomCommand,
+    setCoarseTreeOptions,
     commitConfiguration,
     syncWithFiles,
     resetConfiguration,
