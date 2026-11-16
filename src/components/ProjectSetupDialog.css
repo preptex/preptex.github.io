@@ -193,6 +193,16 @@
   color: #991b1b;
 }
 
+.ConfigurationReasonCode {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
 .ConfigurationSummaryRight {
   display: flex;
   align-items: center;

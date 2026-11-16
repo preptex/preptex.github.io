@@ -12,7 +12,7 @@
    - [API reference](node_modules/@preptex/core/dist/docs/api/README.md)
    - [Project model blueprint](node_modules/@preptex/core/dist/docs/project-model.md)
    - [Node operations blueprint](node_modules/@preptex/core/dist/docs/node-operations.md)
-   - [0.3 migration guide](node_modules/@preptex/core/dist/docs/migration-0.3.md)
+   - [0.4 migration guide](node_modules/@preptex/core/dist/docs/migration-0.4.md)
    - [Website handoff guide](node_modules/@preptex/core/dist/docs/website-handoff.md)
    - [Public declarations](node_modules/@preptex/core/dist/index.d.ts)
 3. If a `packages/preptex-core` package is supplied, read its README, bundled
@@ -38,32 +38,34 @@
   typecheck command; Babel/Jest passing does not establish type safety.
 - Do not add explicit `any`, cast away readonly, suppress compiler errors, or
   redefine the core's public types locally. Use `import type` for type imports.
-- `AstNode` is a discriminated union. Use `NodeType` and `isContainerNode`;
-  handle new variants exhaustively in `TreeLayoutBuilder`.
-- Core projects, ASTs, output files, and diagnostics are immutable snapshots.
+- `ConfiguredNode` is a discriminated union (`root | section | environment | group | math | token`).
+  Use `isConfiguredContainerNode` and handle all variants exhaustively in `TreeLayoutBuilder`.
+- Core snapshots, condition realizations, views, artifacts, and issues are immutable.
   Derive website `LayoutNode` values and store UI state separately.
 - Update file buffers through `useFiles`. Keep reducer updates atomic and pure;
   multiple updates in a React batch must not discard earlier changes.
-- Incrementally parse/merge updates with identical parse options. Rebuild after
-  deletions or failed parses. Never transform a snapshot for older source buffers.
-- Node IDs are file-local and do not persist across reparsing. Include the file
-  identity in UI state ownership; do not use node IDs as global identifiers.
+- Incrementally update `ProjectSnapshot` via `updateProjectSnapshot` when file buffers
+  change, rebuilding on initialization or errors. Never transform an obsolete snapshot or view.
+- `occurrenceKey` values are view-local and do not persist across reparsing. Include snapshot/view
+  identity in UI state ownership; do not use node keys as global identifiers.
 - Preserve original source and line endings. Range offsets are inclusive UTF-16
-  indices, and lines are one-based. Reparse output before navigating its AST.
+  indices, and lines are one-based.
 
 ## Options and error handling
 
 - `src/model/useControl.ts` owns the single `CoreOptionsUI` definition.
-- Use exported enums and guards for core values. Validate untrusted DOM values,
+- Use exported types and guards for core values. Validate untrusted DOM values,
   JSON, file reads, and any future worker messages before using them.
-- Omit `enabledConditions` to preserve conditions. An empty array evaluates them
-  all as false. These states are not interchangeable.
-- Separate mode transforms every parsed file. Output naming is website policy;
-  it currently leaves preserved input references unchanged.
-- Catch `unknown`. Preserve `PrepTexSyntaxError.diagnostic` and
+- `ConditionPolicy` supports `'source'`, `'source-with-overrides'`, `'manual'`, and `'none'`.
+  `'none'` asserts condition-free source and blocks `resolveProjectView` with `'unrealized-condition'`
+  if any conditional remains.
+- Pipeline B (`realizeProjectConditions`) operates on `ProjectSnapshot` even when braces or
+  environments are unbalanced; Pipeline A (`resolveProjectView`, `runAnalysis`, `planTransformation`)
+  operates exclusively on realized views.
+- Catch `unknown`. Preserve `ProjectOperationError.failure` and
   `PrepTexError.code` through the typed `ProcessingError` adapter.
-- Keep warnings structured until presentation. Surface failed file reads and
-  transforms, and disable Run when the current project is unavailable.
+- Keep `ProjectIssue` diagnostics structured until presentation. Surface failed file reads,
+  view blocks, and transforms, and disable view-dependent actions when `view.status !== 'ready'`.
 
 ## Checks
 

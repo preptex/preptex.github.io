@@ -1,45 +1,65 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { InputHandlingMode } from '@preptex/core';
 import ControlPanel from './ControlPanel';
 import type { CoreOptionsUI } from '../model/useControl';
+import type { GeneratedArtifact } from '@preptex/core';
 
 const defaultOptions: CoreOptionsUI = {
   outputName: '',
-  inputHandling: InputHandlingMode.Preserve,
+  inputHandling: 'preserve',
   suppressComments: false,
-  handleIfConditions: true,
-  enabledConditions: ['draft'],
+  suppressCommentEnvironments: false,
+  stripDeclarationsAndSetters: true,
 };
 
 describe('ControlPanel', () => {
-  test('renders options and handles changes', () => {
+  test('renders options and triggers Pipeline B condition realization & Pipeline A export', () => {
     const onChange = jest.fn();
+    const onRealizeConditions = jest.fn();
+    const onExportProject = jest.fn();
+
     render(
       <ControlPanel
         options={defaultOptions}
         onChange={onChange}
         entryFile="main.tex"
-        canTransform={true}
-        onTransform={jest.fn()}
-        availableIfConditions={['draft', 'final']}
+        canRealizeConditions={true}
+        onRealizeConditions={onRealizeConditions}
+        canExportProject={true}
+        onExportProject={onExportProject}
+        conditionDecisions={[
+          {
+            origin: {
+              path: 'main.tex',
+              range: { line: 2, start: 10, end: 17 },
+              snapshotId: 'snap-1',
+              occurrenceId: 'occ-1',
+            },
+            command: 'ifdraft',
+            outcome: 'true',
+            trackedValue: true,
+            effectiveValue: true,
+          },
+        ]}
       />,
     );
 
     expect(screen.getByLabelText('Entry file')).toHaveValue('main.tex');
-    expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled();
+    expect(screen.getByText('\\ifdraft')).toBeInTheDocument();
+    expect(screen.getByText('true')).toBeInTheDocument();
 
-    // Toggle suppress comments
+    // Trigger Pipeline B in-place realization
+    fireEvent.click(screen.getByRole('button', { name: 'Realize Conditions in Place' }));
+    expect(onRealizeConditions).toHaveBeenCalledWith('preview-edits', 'preserve');
+
+    // Toggle suppress comments and export
     fireEvent.click(screen.getByLabelText('Suppress comments'));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ suppressComments: true }),
     );
 
-    // Toggle condition
-    fireEvent.click(screen.getByRole('button', { name: 'draft' }));
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ enabledConditions: [] }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Export Project' }));
+    expect(onExportProject).toHaveBeenCalledTimes(1);
   });
 
   test('renders and triggers independent analysis actions', () => {
@@ -51,7 +71,6 @@ describe('ControlPanel', () => {
         options={defaultOptions}
         onChange={jest.fn()}
         entryFile="main.tex"
-        canTransform={true}
         canRunReferences={true}
         onRunReferences={onRunReferences}
         canRunCommandUsage={false}
@@ -70,7 +89,7 @@ describe('ControlPanel', () => {
     expect(cmdBtn).toHaveAttribute('title', 'Project view is blocked');
   });
 
-  test('triggers comment suppression and environment removal previews', () => {
+  test('triggers comment suppression and environment removal previews on realized view', () => {
     const onPreviewCommentSuppression = jest.fn();
     const onPreviewRemoveEnvironments = jest.fn();
 
@@ -79,7 +98,7 @@ describe('ControlPanel', () => {
         options={defaultOptions}
         onChange={jest.fn()}
         entryFile="main.tex"
-        canTransform={true}
+        canRunViewTransformations={true}
         onPreviewCommentSuppression={onPreviewCommentSuppression}
         onPreviewRemoveEnvironments={onPreviewRemoveEnvironments}
       />,
@@ -87,51 +106,51 @@ describe('ControlPanel', () => {
 
     const commentBtn = screen.getByRole('button', { name: /preview comments/i });
     fireEvent.click(commentBtn);
-    expect(onPreviewCommentSuppression).toHaveBeenCalledTimes(1);
+    expect(onPreviewCommentSuppression).toHaveBeenCalledWith(false);
 
     const envInput = screen.getByPlaceholderText(/e\.g\. comment, C/i);
     fireEvent.change(envInput, { target: { value: 'C, comment' } });
     const envBtn = screen.getByRole('button', { name: /preview removal/i });
     fireEvent.click(envBtn);
-    expect(onPreviewRemoveEnvironments).toHaveBeenCalledWith(['C', 'comment'], 'source');
+    expect(onPreviewRemoveEnvironments).toHaveBeenCalledWith(['C', 'comment'], 'selected');
   });
 
   test('renders generated artifacts and triggers ZIP download', () => {
     const onDownloadZip = jest.fn();
     const onSelectArtifact = jest.fn();
 
-    const mockArtifacts = [
+    const mockArtifacts: readonly GeneratedArtifact[] = [
       {
         path: 'main.tex',
         source: 'Transformed content',
         provenance: {
           snapshotId: 'snap-1',
-          viewId: null,
+          viewId: 'view-1',
           request: {
-            operation: 'materialize' as const,
-            options: { inputs: 'preserve' as const },
+            operation: 'export-project',
+            options: { inputs: 'preserve' },
           },
-          operationVersion: 1 as const,
+          operationVersion: 1,
         },
         origins: [],
         remainingInputs: [],
-        topology: 'preserved-project' as const,
+        topology: 'preserved-project',
       },
       {
         path: 'intro.tex',
         source: 'Intro content',
         provenance: {
           snapshotId: 'snap-1',
-          viewId: null,
+          viewId: 'view-1',
           request: {
-            operation: 'materialize' as const,
-            options: { inputs: 'preserve' as const },
+            operation: 'export-project',
+            options: { inputs: 'preserve' },
           },
-          operationVersion: 1 as const,
+          operationVersion: 1,
         },
         origins: [],
         remainingInputs: [],
-        topology: 'preserved-project' as const,
+        topology: 'preserved-project',
       },
     ];
 
@@ -140,7 +159,6 @@ describe('ControlPanel', () => {
         options={defaultOptions}
         onChange={jest.fn()}
         entryFile="main.tex"
-        canTransform={true}
         artifacts={mockArtifacts}
         onDownloadZip={onDownloadZip}
         onSelectArtifact={onSelectArtifact}

@@ -28,6 +28,8 @@ export function ConfigurationSummary({
 
   let badgeClass = 'ConfigurationBadge--blocked';
   let badgeLabel = 'Unconfigured';
+  let badgeTitle: string | undefined;
+  let reasonCode: string | null = null;
 
   if (view) {
     if (view.status === 'ready') {
@@ -36,9 +38,13 @@ export function ConfigurationSummary({
     } else if (view.status === 'incomplete') {
       badgeClass = 'ConfigurationBadge--incomplete';
       badgeLabel = 'Incomplete';
+      reasonCode = view.reason.code;
+      badgeTitle = `${view.reason.code}: ${view.reason.message}`;
     } else if (view.status === 'blocked') {
       badgeClass = 'ConfigurationBadge--blocked';
       badgeLabel = 'Blocked';
+      reasonCode = view.reason.code;
+      badgeTitle = `${view.reason.code}: ${view.reason.message}`;
     }
   }
 
@@ -47,12 +53,21 @@ export function ConfigurationSummary({
       ? 'Follow source'
       : conditionPolicy.mode === 'source-with-overrides'
       ? 'Source with overrides'
-      : 'Forced values';
+      : conditionPolicy.mode === 'manual'
+      ? 'Forced values'
+      : 'Condition-free (none)';
 
   return (
     <div className="ConfigurationSummary" role="region" aria-label="Project configuration summary">
       <div className="ConfigurationSummaryLeft">
-        <span className={`ConfigurationBadge ${badgeClass}`}>{badgeLabel}</span>
+        <span className={`ConfigurationBadge ${badgeClass}`} title={badgeTitle}>
+          {badgeLabel}
+        </span>
+        {reasonCode ? (
+          <code className="ConfigurationReasonCode" title={badgeTitle}>
+            {reasonCode}
+          </code>
+        ) : null}
         <span>
           <strong>Entry:</strong> {entryPath ? <code>{entryPath}</code> : <em>None</em>}
         </span>

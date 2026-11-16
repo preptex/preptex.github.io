@@ -4,11 +4,11 @@ import { useProjectConfiguration } from './useProjectConfiguration';
 import { useProjectModel } from './useProjectModel';
 import { useOperations } from './useOperations';
 
-describe('Milestone 5: Independent Analysis Operations', () => {
+describe('Independent Analysis & Two-Pipeline Operations', () => {
   function useOperationsTest(initialFiles: Record<string, string>) {
     const files = useFiles(initialFiles);
     const config = useProjectConfiguration(files.filesByName, { entryPath: 'main.tex' });
-    const model = useProjectModel(files.filesByName, files.sourceRevision, config);
+    const model = useProjectModel(files.filesByName, files.sourceRevision, config, files.fileVersions);
     const operations = useOperations(model.snapshot, model.view);
     return { files, config, model, operations };
   }
@@ -64,7 +64,6 @@ describe('Milestone 5: Independent Analysis Operations', () => {
     });
     expect(result.current.operations.isStale).toBe(false);
 
-    // Modify source files
     act(() => {
       result.current.files.upsertTextFiles({ 'main.tex': '\\label{target:absent}\\ref{target:absent}' });
     });
@@ -76,7 +75,7 @@ describe('Milestone 5: Independent Analysis Operations', () => {
     function useUnconfiguredTest() {
       const files = useFiles({ 'main.tex': 'Hello' });
       const config = useProjectConfiguration(files.filesByName, { entryPath: null });
-      const model = useProjectModel(files.filesByName, files.sourceRevision, config);
+      const model = useProjectModel(files.filesByName, files.sourceRevision, config, files.fileVersions);
       const operations = useOperations(model.snapshot, model.view);
       return { model, operations };
     }
@@ -89,7 +88,7 @@ describe('Milestone 5: Independent Analysis Operations', () => {
     expect(capability.reasons[0]?.code).toBe('view-not-ready');
   });
 
-  it('plans comment suppression and applies edits to sources', () => {
+  it('plans comment suppression on realized view and applies edits to sources', () => {
     const { result } = renderHook(() =>
       useOperationsTest({
         'main.tex': '% A comment\nHello World\n',
@@ -99,7 +98,7 @@ describe('Milestone 5: Independent Analysis Operations', () => {
     act(() => {
       result.current.operations.planTransformation({
         operation: 'suppress-comments',
-        options: { target: 'source' },
+        options: { target: 'selected' },
       });
     });
 
@@ -107,17 +106,53 @@ describe('Milestone 5: Independent Analysis Operations', () => {
     expect(result.current.operations.pendingEditPlan).not.toBeNull();
     expect(result.current.operations.isEditPlanStale).toBe(false);
 
-    // Apply the pending edits to sources
     act(() => {
       result.current.operations.applyPendingEdits((updatedFiles) => {
         result.current.files.upsertTextFiles(updatedFiles);
       });
     });
 
-    // Source files should now be updated without comments
     expect(result.current.files.filesByName['main.tex']).not.toContain('% A comment');
     expect(result.current.files.filesByName['main.tex']).toContain('Hello World');
     expect(result.current.operations.pendingEditPlan).toBeNull();
+  });
+
+  it('realizes conditions standalone (Pipeline B) even when structural view is blocked (INV-3)', () => {
+    const { result } = renderHook(() =>
+      useOperationsTest({
+        'main.tex': '\\newif\\ifcam\\camtrue\n\\ifcam\n{ \\begin{unclosed}\nKeep me\n\\else\nDrop me\n\\fi',
+      }),
+    );
+
+    // Structural view is blocked due to unclosed brace/environment
+    expect(result.current.model.view?.status).toBe('blocked');
+    expect(result.current.model.isReady).toBe(false);
+
+    // Pipeline B condition realization succeeds independently
+    act(() => {
+      result.current.operations.realizeConditions(
+        {
+          entryPath: 'main.tex',
+          traversal: 'project',
+          conditions: { mode: 'source' },
+          inputs: 'preserve',
+          stripDeclarationsAndSetters: true,
+        },
+        'preview-edits',
+      );
+    });
+
+    expect(result.current.operations.conditionRealization?.status).toBe('ready');
+    expect(result.current.operations.pendingEditPlan).not.toBeNull();
+    expect(result.current.operations.isEditPlanStale).toBe(false);
+
+    act(() => {
+      result.current.operations.applyPendingEdits((updatedFiles) => {
+        result.current.files.upsertTextFiles(updatedFiles);
+      });
+    });
+
+    expect(result.current.files.filesByName['main.tex']).toBe('{ \\begin{unclosed}\nKeep me\n');
   });
 
   it('detects stale edit plans when source changes before apply', () => {
@@ -130,20 +165,18 @@ describe('Milestone 5: Independent Analysis Operations', () => {
     act(() => {
       result.current.operations.planTransformation({
         operation: 'suppress-comments',
-        options: { target: 'source' },
+        options: { target: 'selected' },
       });
     });
 
     expect(result.current.operations.isEditPlanStale).toBe(false);
 
-    // Change source before applying
     act(() => {
       result.current.files.upsertTextFiles({ 'main.tex': 'Completely different' });
     });
 
     expect(result.current.operations.isEditPlanStale).toBe(true);
 
-    // Trying to apply stale edit plan should fail / report error
     act(() => {
       result.current.operations.applyPendingEdits((updatedFiles) => {
         result.current.files.upsertTextFiles(updatedFiles);
@@ -163,7 +196,7 @@ describe('Milestone 5: Independent Analysis Operations', () => {
     act(() => {
       result.current.operations.planTransformation({
         operation: 'suppress-comments',
-        options: { target: 'source' },
+        options: { target: 'selected' },
       });
     });
 

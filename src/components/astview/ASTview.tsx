@@ -1,4 +1,5 @@
 import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import type { ProjectIssue } from '@preptex/core';
 import { isLayoutNodeKind, LAYOUT_NODE_KINDS } from '../../types/LayoutNode';
 import type { LayoutNode, LayoutNodeKind } from '../../types/LayoutNode';
 import TreeNode from './TreeNode';
@@ -11,16 +12,16 @@ export interface ASTviewProps {
   structureMode?: 'configured' | 'source';
   onChangeStructureMode?: (mode: 'configured' | 'source') => void;
   isConfiguredAvailable?: boolean;
+  viewIssue?: ProjectIssue | null;
 }
 
-const STORAGE_KEY = 'preptex.astview.options.v5';
+const STORAGE_KEY = 'preptex.astview.options.v6';
 
 const DEFAULT_NODE_KINDS = LAYOUT_NODE_KINDS;
 
 const DEFAULT_VISIBLE_NODE_KINDS: readonly LayoutNodeKind[] = [
   'root',
   'section',
-  'input',
 ];
 const DEFAULT_COMMANDS = ['title', 'author', 'label', 'ref', 'cite', 'includegraphics'];
 const DEFAULT_VISIBLE_COMMANDS = ['title', 'author'];
@@ -112,7 +113,24 @@ function loadOptions(): AstViewOptions {
   }
 }
 
-function filterTree(node: LayoutNode, options: AstViewOptions): LayoutNode | null {
+function filterTree(
+  node: LayoutNode,
+  options: AstViewOptions,
+  structureMode: 'configured' | 'source',
+): LayoutNode | null {
+  if (structureMode === 'source') {
+    if (node.kind === 'space' && !options.visibleKinds.includes('space')) {
+      return null;
+    }
+    const visibleChildren = node.children
+      .map((child) => filterTree(child, options, structureMode))
+      .filter((child): child is LayoutNode => Boolean(child));
+    return {
+      ...node,
+      children: visibleChildren,
+    };
+  }
+
   const optionName = normalizeOptionName(node.data || node.label || '');
   const allCommandsVisible = options.visibleKinds.includes('command');
   const selectedCommandVisible = options.selectedCommands.includes(optionName);
@@ -133,7 +151,7 @@ function filterTree(node: LayoutNode, options: AstViewOptions): LayoutNode | nul
   if (!shouldRender) return null;
 
   const visibleChildren = node.children
-    .map((child) => filterTree(child, options))
+    .map((child) => filterTree(child, options, structureMode))
     .filter((child): child is LayoutNode => Boolean(child));
 
   return {
@@ -150,6 +168,7 @@ export default function ASTview({
   structureMode = 'configured',
   onChangeStructureMode,
   isConfiguredAvailable = true,
+  viewIssue = null,
 }: ASTviewProps) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [options, setOptions] = useState<AstViewOptions>(() => loadOptions());
@@ -178,7 +197,10 @@ export default function ASTview({
     return () => window.removeEventListener('pointerdown', closeOnOutsideClick);
   }, [optionsOpen]);
 
-  const filteredRoot = useMemo(() => (root ? filterTree(root, options) : null), [root, options]);
+  const filteredRoot = useMemo(
+    () => (root ? filterTree(root, options, structureMode) : null),
+    [root, options, structureMode],
+  );
 
   const toggleKind = (kind: LayoutNodeKind) => {
     setOptions((current) => {
@@ -274,7 +296,13 @@ export default function ASTview({
                 className={`AstTreeModeBtn ${structureMode === 'configured' ? 'AstTreeModeBtn--active' : ''}`}
                 disabled={!isConfiguredAvailable}
                 onClick={() => onChangeStructureMode('configured')}
-                title={isConfiguredAvailable ? 'Configured document structure' : 'Configure an entry in Settings to enable structure view'}
+                title={
+                  isConfiguredAvailable
+                    ? 'Configured document structure'
+                    : viewIssue
+                    ? `${viewIssue.code}: ${viewIssue.message}`
+                    : 'Configure an entry in Settings to enable structure view'
+                }
               >
                 Structure
               </button>
@@ -440,6 +468,8 @@ export default function ASTview({
             <div className="AstTreeEmpty">
               {root
                 ? 'No nodes match the current AST view options.'
+                : structureMode === 'configured' && viewIssue
+                ? `Structure unavailable (${viewIssue.code}): ${viewIssue.message}`
                 : 'Select a file to inspect its structure.'}
             </div>
           )}

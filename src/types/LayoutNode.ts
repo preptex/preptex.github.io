@@ -1,11 +1,21 @@
-import type { NodeId, NodeLocation, NodeType, SectionLevel, SourceRange } from '@preptex/core';
+import type { NodeLocation, SourceRange } from '@preptex/core';
 
 export const LAYOUT_NODE_KINDS = [
-  'root', 'section', 'environment', 'condition', 'if', 'else', 'text',
-  'newline', 'comment', 'command', 'math', 'group', 'input', 'token',
+  'root',
+  'section',
+  'environment',
+  'group',
+  'math',
+  'command',
+  'comment',
+  'text',
+  'space',
+  'token',
 ] as const;
 
 export type LayoutNodeKind = typeof LAYOUT_NODE_KINDS[number];
+
+export type LayoutSectionLevel = 1 | 2 | 3 | 4 | 5;
 
 export function isLayoutNodeKind(value: string): value is LayoutNodeKind {
   return LAYOUT_NODE_KINDS.some((kind) => kind === value);
@@ -13,7 +23,6 @@ export function isLayoutNodeKind(value: string): value is LayoutNodeKind {
 
 /** Website display data; never attach layout or UI state to the core AST. */
 export interface LayoutNode {
-  readonly type: NodeType;
   readonly kind: LayoutNodeKind;
   readonly data?: string;
   /** One-based source line in the selected input file. */
@@ -25,9 +34,9 @@ export interface LayoutNode {
   readonly y: number;
   readonly label?: string;
   readonly sublabel?: string;
-  readonly sectionLevel?: SectionLevel;
+  readonly sectionLevel?: LayoutSectionLevel;
   readonly isStarred?: boolean;
-  readonly id: NodeId | string;
+  readonly id: string;
   readonly occurrenceKey?: string;
   readonly location?: NodeLocation;
   readonly strokeWidth: number;

@@ -1,8 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import type {
   EnvironmentInventory,
   InventoryResult,
+  ProjectFilePath,
+  ProjectIssue,
   ProjectSnapshot as CoreProjectSnapshot,
+  ProjectSourceChange,
   ProjectView,
   SourceFile,
 } from '@preptex/core';
@@ -14,6 +17,7 @@ import {
   inspectProjectEnvironmentsAdapter,
   resolveProjectViewAdapter,
   toProcessingError,
+  updateProjectSnapshotAdapter,
 } from '../services/core';
 import type { ProcessingError } from '../services/core';
 
@@ -21,6 +25,8 @@ export interface ProjectModelResult {
   readonly snapshot: CoreProjectSnapshot | null;
   readonly view: ProjectView | null;
   readonly isReady: boolean;
+  readonly viewIssue: ProjectIssue | null;
+  readonly issues: readonly ProjectIssue[];
   readonly detectedConditions: readonly string[];
   readonly inventory: InventoryResult | null;
   readonly envInventory: EnvironmentInventory | null;
@@ -31,30 +37,71 @@ export function useProjectModel(
   files: FilesMap,
   sourceRevision: number,
   config: ProjectConfigurationState,
+  fileVersions?: Readonly<Record<ProjectFilePath, number>>,
 ): ProjectModelResult {
-  // 1. Snapshot derived from files (memoized by sourceRevision and files)
+  const previousSnapshotRef = useRef<CoreProjectSnapshot | null>(null);
+
+  // 1. Snapshot derived from files (incrementally updated when possible)
   const { snapshot, snapshotError } = useMemo<{
     readonly snapshot: CoreProjectSnapshot | null;
     readonly snapshotError: ProcessingError | null;
   }>(() => {
-    // Reference sourceRevision inside body to satisfy hook dependencies
     if (sourceRevision < 0) return { snapshot: null, snapshotError: null };
     const fileEntries = Object.entries(files);
     if (fileEntries.length === 0) {
+      previousSnapshotRef.current = null;
       return { snapshot: null, snapshotError: null };
     }
-    const sourceFiles: readonly SourceFile[] = fileEntries.map(([path, source]) => ({
-      path,
-      source,
-      version: 1,
-    }));
+
     try {
-      const snap = createProjectSnapshotAdapter(sourceFiles);
-      return { snapshot: snap, snapshotError: null };
+      const prev = previousSnapshotRef.current;
+      if (prev) {
+        const prevByPath = new Map(prev.files.map((f) => [f.path, f]));
+        const changes: ProjectSourceChange[] = [];
+
+        for (const prevFile of prev.files) {
+          if (!Object.prototype.hasOwnProperty.call(files, prevFile.path)) {
+            changes.push({ kind: 'remove', path: prevFile.path });
+          }
+        }
+
+        for (const [path, source] of fileEntries) {
+          const existing = prevByPath.get(path);
+          if (!existing || existing.source !== source) {
+            const explicitVersion = fileVersions?.[path];
+            const nextVersion = Math.max(
+              (existing?.version ?? 0) + 1,
+              explicitVersion ?? 1,
+            );
+            changes.push({
+              kind: 'upsert',
+              file: { path, source, version: nextVersion },
+            });
+          }
+        }
+
+        if (changes.length === 0) {
+          return { snapshot: prev, snapshotError: null };
+        }
+
+        const updated = updateProjectSnapshotAdapter(prev, changes);
+        previousSnapshotRef.current = updated;
+        return { snapshot: updated, snapshotError: null };
+      }
+
+      const sourceFiles: readonly SourceFile[] = fileEntries.map(([path, source]) => ({
+        path,
+        source,
+        version: fileVersions?.[path] ?? 1,
+      }));
+      const created = createProjectSnapshotAdapter(sourceFiles);
+      previousSnapshotRef.current = created;
+      return { snapshot: created, snapshotError: null };
     } catch (err: unknown) {
+      previousSnapshotRef.current = null;
       return { snapshot: null, snapshotError: toProcessingError(err) };
     }
-  }, [files, sourceRevision]);
+  }, [files, sourceRevision, fileVersions]);
 
   // 2. Source inventories derived from snapshot
   const { inventory, envInventory, detectedConditions } = useMemo(() => {
@@ -75,7 +122,11 @@ export function useProjectModel(
           conditionNames.add(fact.name);
         } else if (fact.kind === 'condition-assignment' && fact.name) {
           conditionNames.add(fact.name);
-        } else if (fact.kind === 'condition-test' && fact.command.startsWith('if')) {
+        } else if (
+          fact.kind === 'condition-test' &&
+          fact.testKind === 'named-candidate' &&
+          fact.command.startsWith('if')
+        ) {
           const stripped = fact.command.slice(2);
           if (stripped) conditionNames.add(stripped);
         }
@@ -104,7 +155,6 @@ export function useProjectModel(
     if (!snapshot || !config.entryPath) {
       return { view: null, viewError: null };
     }
-    // Verify entry exists in snapshot
     if (!snapshot.files.some((f) => f.path === config.entryPath)) {
       return { view: null, viewError: null };
     }
@@ -120,6 +170,40 @@ export function useProjectModel(
     }
   }, [snapshot, config.entryPath, config.traversal, config.conditionPolicy, config.revision]);
 
+  const viewIssue = useMemo<ProjectIssue | null>(() => {
+    if (!view || view.status === 'ready') return null;
+    return view.reason;
+  }, [view]);
+
+  const issues = useMemo<readonly ProjectIssue[]>(() => {
+    const collected: ProjectIssue[] = [];
+    const seen = new Set<string>();
+    const addIssue = (issue: ProjectIssue) => {
+      const key = `${issue.code}|${issue.location?.path ?? ''}|${issue.location?.range.start ?? -1}|${issue.message}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        collected.push(issue);
+      }
+    };
+
+    if (view) {
+      if (view.status !== 'ready') {
+        addIssue(view.reason);
+      }
+      for (const issue of view.coverage.issues) {
+        addIssue(issue);
+      }
+    }
+    if (snapshot) {
+      for (const file of snapshot.files) {
+        for (const issue of file.coverage.issues) {
+          addIssue(issue);
+        }
+      }
+    }
+    return collected;
+  }, [view, snapshot]);
+
   const isReady = view?.status === 'ready';
   const error = viewError || snapshotError;
 
@@ -127,6 +211,8 @@ export function useProjectModel(
     snapshot,
     view,
     isReady,
+    viewIssue,
+    issues,
     detectedConditions,
     inventory,
     envInventory,

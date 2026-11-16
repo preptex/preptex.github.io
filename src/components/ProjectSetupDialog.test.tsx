@@ -5,7 +5,7 @@ import { ProjectSetupDialog } from './ProjectSetupDialog';
 import { ConfigurationSummary } from './ConfigurationSummary';
 import { DEFAULT_CONFIGURATION } from '../model/useProjectConfiguration';
 
-describe('Milestone 3: ProjectSetupDialog & ConfigurationSummary', () => {
+describe('ProjectSetupDialog & ConfigurationSummary', () => {
   const defaultFiles = {
     'main.tex': '\\newif\\ifdraft\\drafttrue',
     'part.tex': 'Part',
@@ -43,7 +43,7 @@ describe('Milestone 3: ProjectSetupDialog & ConfigurationSummary', () => {
     expect(screen.getByText('\\ifdraft')).toBeInTheDocument();
   });
 
-  it('commits draft configuration only when Apply is clicked', () => {
+  it('commits draft configuration including condition-free mode none when Apply is clicked', () => {
     const handleApply = jest.fn();
     const handleClose = jest.fn();
 
@@ -58,19 +58,21 @@ describe('Milestone 3: ProjectSetupDialog & ConfigurationSummary', () => {
       />,
     );
 
-    // Change entry
     const select = screen.getByLabelText(/Project Entry File/i);
     fireEvent.change(select, { target: { value: 'main.tex' } });
 
+    const policySelect = screen.getByLabelText(/Condition Evaluation Policy/i);
+    fireEvent.change(policySelect, { target: { value: 'none' } });
+
     expect(handleApply).not.toHaveBeenCalled();
 
-    // Click Apply
     const applyButton = screen.getByText(/Apply Configuration/i);
     fireEvent.click(applyButton);
 
     expect(handleApply).toHaveBeenCalledWith(
       expect.objectContaining({
         entryPath: 'main.tex',
+        conditionPolicy: { mode: 'none' },
       }),
     );
     expect(handleClose).toHaveBeenCalled();
@@ -98,11 +100,11 @@ describe('Milestone 3: ProjectSetupDialog & ConfigurationSummary', () => {
     expect(handleClose).toHaveBeenCalled();
   });
 
-  it('renders ConfigurationSummary with appropriate status badge', () => {
+  it('renders ConfigurationSummary with Ready and Blocked unrealized-condition status', () => {
     const snapshot = createProjectSnapshot([{ path: 'main.tex', version: 1, source: 'Hello' }]);
     const view = resolveProjectView(snapshot, { entryPath: 'main.tex' });
 
-    render(
+    const { rerender } = render(
       <ConfigurationSummary
         configuration={{ ...DEFAULT_CONFIGURATION, entryPath: 'main.tex' }}
         view={view}
@@ -112,5 +114,29 @@ describe('Milestone 3: ProjectSetupDialog & ConfigurationSummary', () => {
 
     expect(screen.getByText('Ready')).toBeInTheDocument();
     expect(screen.getByText('main.tex')).toBeInTheDocument();
+
+    const condSnap = createProjectSnapshot([
+      { path: 'main.tex', version: 1, source: '\\ifdraft Hello\\fi' },
+    ]);
+    const blockedView = resolveProjectView(condSnap, {
+      entryPath: 'main.tex',
+      conditions: { mode: 'none' },
+    });
+
+    rerender(
+      <ConfigurationSummary
+        configuration={{
+          ...DEFAULT_CONFIGURATION,
+          entryPath: 'main.tex',
+          conditionPolicy: { mode: 'none' },
+        }}
+        view={blockedView}
+        onOpenSettings={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('Blocked')).toBeInTheDocument();
+    expect(screen.getByText('unrealized-condition')).toBeInTheDocument();
+    expect(screen.getByText('Condition-free (none)')).toBeInTheDocument();
   });
 });

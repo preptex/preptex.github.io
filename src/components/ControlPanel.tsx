@@ -1,16 +1,24 @@
 import { useState } from 'react';
 import './ControlPanel.css';
-import { InputHandlingMode, isInputHandlingMode } from '@preptex/core';
-import type { ConditionName, GeneratedArtifact, ProjectFilePath } from '@preptex/core';
-import type { CoreOptionsUI } from '../model/useControl';
+import type {
+  ConditionDecision,
+  GeneratedArtifact,
+  ProjectFilePath,
+} from '@preptex/core';
+import { isInputHandlingOption, type CoreOptionsUI } from '../model/useControl';
 
 export type ControlPanelProps = {
   options: CoreOptionsUI;
   onChange: (next: CoreOptionsUI) => void;
-  availableIfConditions?: readonly ConditionName[];
   entryFile?: ProjectFilePath;
-  canTransform: boolean;
-  onTransform?: () => void;
+  canRealizeConditions?: boolean;
+  realizeConditionsReason?: string;
+  onRealizeConditions?: (
+    mode: 'preview-edits' | 'export-artifacts',
+    inputs: 'preserve' | 'inline',
+  ) => void;
+  conditionDecisions?: readonly ConditionDecision[];
+
   onRunReferences?: () => void;
   canRunReferences?: boolean;
   referencesReason?: string;
@@ -19,18 +27,17 @@ export type ControlPanelProps = {
   commandUsageReason?: string;
   isAnalyzing?: boolean;
 
-  onPreviewCommentSuppression?: (
-    target: 'source' | 'selected',
-    suppressCommentEnvironments: boolean,
-  ) => void;
+  canRunViewTransformations?: boolean;
+  viewTransformationReason?: string;
+  onPreviewCommentSuppression?: (suppressCommentEnvironments: boolean) => void;
   onPreviewRemoveEnvironments?: (
     names: readonly string[],
-    target: 'source' | 'selected',
+    target: 'selected' | 'artifact',
   ) => void;
-  onExportProject?: (
-    conditions: 'preserve' | 'materialize',
-    inputs: 'preserve' | 'inline',
-  ) => void;
+  onExportProject?: () => void;
+  canExportProject?: boolean;
+  exportReason?: string;
+
   artifacts?: readonly GeneratedArtifact[];
   onDownloadZip?: () => void;
   onDownloadArtifact?: (artifact: GeneratedArtifact) => void;
@@ -40,10 +47,11 @@ export type ControlPanelProps = {
 export default function ControlPanel({
   options,
   onChange,
-  availableIfConditions = [],
   entryFile = '',
-  onTransform,
-  canTransform,
+  canRealizeConditions = false,
+  realizeConditionsReason,
+  onRealizeConditions,
+  conditionDecisions = [],
   onRunReferences,
   canRunReferences = false,
   referencesReason,
@@ -51,178 +59,148 @@ export default function ControlPanel({
   canRunCommandUsage = false,
   commandUsageReason,
   isAnalyzing = false,
+  canRunViewTransformations = false,
+  viewTransformationReason,
   onPreviewCommentSuppression,
   onPreviewRemoveEnvironments,
   onExportProject,
+  canExportProject = false,
+  exportReason,
   artifacts = [],
   onDownloadZip,
   onDownloadArtifact,
   onSelectArtifact,
 }: ControlPanelProps) {
-  const [commentTarget, setCommentTarget] = useState<'source' | 'selected'>('source');
+  const [realizeInputs, setRealizeInputs] = useState<'preserve' | 'inline'>('preserve');
   const [suppressCommentEnvs, setSuppressCommentEnvs] = useState(false);
 
   const [envNamesText, setEnvNamesText] = useState('');
-  const [envTarget, setEnvTarget] = useState<'source' | 'selected'>('source');
+  const [envTarget, setEnvTarget] = useState<'selected' | 'artifact'>('selected');
 
-  const [exportConditions, setExportConditions] = useState<'preserve' | 'materialize'>('preserve');
-  const [exportInputs, setExportInputs] = useState<'preserve' | 'inline'>('preserve');
   const outputPreview =
-    options.outputName || (entryFile ? entryFile.replace(/\.tex$/i, '') + '.processed.tex' : '');
+    options.outputName || (entryFile ? entryFile : 'main.tex');
 
   const toggleSuppressComments = () => {
     onChange({ ...options, suppressComments: !options.suppressComments });
   };
 
-  const toggleHandleIfConditions = () => {
-    onChange({ ...options, handleIfConditions: !options.handleIfConditions });
+  const toggleSuppressCommentEnvs = () => {
+    onChange({
+      ...options,
+      suppressCommentEnvironments: !options.suppressCommentEnvironments,
+    });
   };
 
-  const toggleCondition = (cond: string) => {
-    if (!options.handleIfConditions) return;
-    const exists = options.enabledConditions.includes(cond);
-    const nextIfs = exists
-      ? options.enabledConditions.filter((c) => c !== cond)
-      : [...options.enabledConditions, cond];
-    onChange({ ...options, enabledConditions: nextIfs });
+  const toggleStripDeclarations = () => {
+    onChange({
+      ...options,
+      stripDeclarationsAndSetters: !options.stripDeclarationsAndSetters,
+    });
   };
 
   return (
     <section className="ControlPanel" aria-label="Control panel">
       <div className="ControlPanelBody">
-        {/* Card 1: Entry & Pipeline Options */}
-        <div className="ControlCard ControlCard--entry">
+        {/* Card 1: Pipeline B — Standalone Condition Realization */}
+        <div className="ControlCard ControlCard--conditions">
           <div className="ControlCardHeader">
-            <h3>Entry &amp; Output</h3>
-          </div>
-          <div className="ControlFieldGrid">
-            <label className="ControlField" htmlFor="entryFile">
-              <span>Entry file</span>
-              <input
-                id="entryFile"
-                className="ControlInput"
-                type="text"
-                value={entryFile || 'No file selected'}
-                readOnly
-              />
-            </label>
-
-            <label className="ControlField" htmlFor="outputName">
-              <span>Output file name</span>
-              <input
-                id="outputName"
-                className="ControlInput"
-                type="text"
-                placeholder={outputPreview || 'main.processed.tex'}
-                value={options.outputName}
-                onChange={(e) => onChange({ ...options, outputName: e.target.value })}
-              />
-            </label>
-          </div>
-
-          <div className="ControlCardDivider" />
-
-          <div className="ControlSubgroup">
-            <h4>Input Command</h4>
+            <div className="ControlConditionsHeader">
+              <h3>Condition Realization</h3>
+              <span className="ControlPipelineBadge">Pipeline B</span>
+            </div>
             <p className="ControlSubtitle">
-              Handle <code>\input</code> command
+              Evaluate and strip <code>\if...</code> branches without requiring balanced braces or environments.
             </p>
-            <label className="ControlField" htmlFor="handleInputCmd">
-              <select
-                id="handleInputCmd"
-                className="ControlInput"
-                value={options.inputHandling}
-                aria-label="Input handling"
-                onChange={(e) => {
-                  const mode = e.target.value;
-                  if (isInputHandlingMode(mode)) onChange({ ...options, inputHandling: mode });
-                }}
-              >
-                <option value={InputHandlingMode.Preserve}>preserve</option>
-                <option value={InputHandlingMode.Flatten}>flatten</option>
-                <option value={InputHandlingMode.Separate}>separate</option>
-              </select>
-            </label>
           </div>
 
-          <div className="ControlSubgroup">
-            <h4>Comments</h4>
-            <label className="ControlCheck">
-              <input
-                type="checkbox"
-                checked={options.suppressComments}
-                onChange={toggleSuppressComments}
-              />
-              <span>Suppress comments</span>
-            </label>
-          </div>
+          <label className="ControlCheck">
+            <input
+              type="checkbox"
+              checked={options.stripDeclarationsAndSetters}
+              onChange={toggleStripDeclarations}
+            />
+            <span>Strip declarations &amp; setters (<code>\newif</code>, <code>\Xtrue</code>)</span>
+          </label>
 
-          {onTransform ? (
-            <div className="ControlPipelineAction">
+          <label className="ControlField" htmlFor="realizeInputsSelect">
+            <span>Artifact input handling</span>
+            <select
+              id="realizeInputsSelect"
+              className="ControlInput"
+              value={realizeInputs}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (isInputHandlingOption(val)) setRealizeInputs(val);
+              }}
+            >
+              <option value="preserve">Preserve \input files</option>
+              <option value="inline">Inline active \input files</option>
+            </select>
+          </label>
+
+          {conditionDecisions.length > 0 ? (
+            <div className="ControlDecisions" aria-label="Evaluated condition decisions">
+              <div className="ControlDecisionsTitle">
+                Condition Decisions ({conditionDecisions.length})
+              </div>
+              <ul className="ControlDecisionsList">
+                {conditionDecisions.slice(0, 8).map((decision, idx) => (
+                  <li key={`${decision.command}-${idx}`} className="ControlDecisionItem">
+                    <code>\{decision.command}</code>
+                    <span className={`ControlDecisionOutcome ControlDecisionOutcome--${decision.outcome}`}>
+                      {decision.outcome}
+                    </span>
+                  </li>
+                ))}
+                {conditionDecisions.length > 8 ? (
+                  <li className="ControlDecisionMore">
+                    +{conditionDecisions.length - 8} more decisions
+                  </li>
+                ) : null}
+              </ul>
+            </div>
+          ) : null}
+
+          {onRealizeConditions ? (
+            <div className="ControlActionButtons">
               <button
                 type="button"
                 className="ControlButton ControlButton--primary"
-                onClick={onTransform}
-                disabled={!canTransform}
-                title={canTransform ? `Transform ${entryFile}` : 'Select a successfully parsed file first'}
+                disabled={!canRealizeConditions}
+                title={
+                  canRealizeConditions
+                    ? 'Preview in-place source edits stripping realized conditions'
+                    : realizeConditionsReason || 'Upload source files first'
+                }
+                onClick={() => onRealizeConditions('preview-edits', 'preserve')}
               >
-                Run
+                Realize Conditions in Place
+              </button>
+              <button
+                type="button"
+                className="ControlButton ControlButton--secondary"
+                disabled={!canRealizeConditions}
+                title={
+                  canRealizeConditions
+                    ? 'Generate condition-free artifact files without altering sources'
+                    : realizeConditionsReason || 'Upload source files first'
+                }
+                onClick={() => onRealizeConditions('export-artifacts', realizeInputs)}
+              >
+                Export Realized Files
               </button>
             </div>
           ) : null}
         </div>
 
-        {/* Card 2: Conditions */}
-        <div className="ControlCard ControlCard--conditions">
-          <div className="ControlCardHeader">
-            <div className="ControlConditionsHeader">
-              <h3>Conditions</h3>
-              <label className="ControlSwitch">
-                <input
-                  type="checkbox"
-                  checked={options.handleIfConditions}
-                  onChange={toggleHandleIfConditions}
-                />
-                <span>Enable</span>
-              </label>
-            </div>
-            <p className="ControlSubtitle">Select the conditions to include.</p>
-          </div>
-
-          <ul className="ConditionsList" role="listbox" aria-label="Available if conditions">
-            {availableIfConditions.length === 0 ? (
-              <li className="ControlEmpty">No conditions found</li>
-            ) : (
-              availableIfConditions.map((cond) => {
-                const selected = options.enabledConditions.includes(cond);
-                return (
-                  <li key={cond}>
-                    <button
-                      type="button"
-                      className={
-                        selected
-                          ? 'ConditionItem ConditionItem--selected'
-                          : 'ConditionItem'
-                      }
-                      aria-pressed={selected}
-                      disabled={!options.handleIfConditions}
-                      onClick={() => toggleCondition(cond)}
-                    >
-                      <span className="ConditionBox" aria-hidden="true" />
-                      <span>{cond}</span>
-                    </button>
-                  </li>
-                );
-              })
-            )}
-          </ul>
-        </div>
-
-        {/* Card 3: Analyses (Independent Operations) */}
+        {/* Card 2: Pipeline A — Structural Analyses */}
         <div className="ControlCard ControlCard--analyses">
           <div className="ControlCardHeader">
-            <h3>Analyses</h3>
-            <p className="ControlSubtitle">Inspect project without generating output</p>
+            <div className="ControlConditionsHeader">
+              <h3>Analyses</h3>
+              <span className="ControlPipelineBadge">Pipeline A</span>
+            </div>
+            <p className="ControlSubtitle">Inspect realized document structure without generating output</p>
           </div>
           <div className="ControlActionButtons">
             {onRunReferences ? (
@@ -232,7 +210,7 @@ export default function ControlPanel({
                   className="ControlButton ControlButton--secondary"
                   onClick={onRunReferences}
                   disabled={!canRunReferences || isAnalyzing}
-                  title={referencesReason || 'Check references in configured project'}
+                  title={referencesReason || 'Check references in realized project view'}
                 >
                   Check References
                 </button>
@@ -256,47 +234,44 @@ export default function ControlPanel({
           </div>
         </div>
 
-        {/* Card 4: Transformations & Export */}
+        {/* Card 3: Pipeline A — Structural Edits */}
         <div className="ControlCard ControlCard--transformations">
           <div className="ControlCardHeader">
-            <h3>Transformations &amp; Export</h3>
-            <p className="ControlSubtitle">Preview and apply structural changes</p>
+            <div className="ControlConditionsHeader">
+              <h3>Structural Edits</h3>
+              <span className="ControlPipelineBadge">Pipeline A</span>
+            </div>
+            <p className="ControlSubtitle">Preview and apply changes on the realized view</p>
           </div>
 
           {onPreviewCommentSuppression ? (
             <div className="ControlSubgroup">
               <h4>Comment Suppression</h4>
-              <div className="ControlFieldGrid">
-                <label className="ControlField" htmlFor="commentTargetSelect">
-                  <span>Target</span>
-                  <select
-                    id="commentTargetSelect"
-                    className="ControlInput"
-                    value={commentTarget}
-                    onChange={(e) => setCommentTarget(e.target.value as 'source' | 'selected')}
-                  >
-                    <option value="source">All sources</option>
-                    <option value="selected">Configured view</option>
-                  </select>
-                </label>
-                <label className="ControlCheck">
-                  <input
-                    type="checkbox"
-                    checked={suppressCommentEnvs}
-                    onChange={(e) => setSuppressCommentEnvs(e.target.checked)}
-                  />
-                  <span>Suppress comment environments</span>
-                </label>
-              </div>
+              <label className="ControlCheck">
+                <input
+                  type="checkbox"
+                  checked={suppressCommentEnvs}
+                  onChange={(e) => setSuppressCommentEnvs(e.target.checked)}
+                />
+                <span>Suppress comment environments</span>
+              </label>
               <button
                 type="button"
                 className="ControlButton ControlButton--secondary"
-                onClick={() => onPreviewCommentSuppression(commentTarget, suppressCommentEnvs)}
+                disabled={!canRunViewTransformations}
+                title={
+                  canRunViewTransformations
+                    ? 'Preview comment suppression edits on realized view'
+                    : viewTransformationReason || 'A ready view is required'
+                }
+                onClick={() => onPreviewCommentSuppression(suppressCommentEnvs)}
               >
                 Preview Comments
               </button>
             </div>
           ) : null}
+
+          <div className="ControlCardDivider" />
 
           {onPreviewRemoveEnvironments ? (
             <div className="ControlSubgroup">
@@ -319,17 +294,27 @@ export default function ControlPanel({
                     id="envTargetSelect"
                     className="ControlInput"
                     value={envTarget}
-                    onChange={(e) => setEnvTarget(e.target.value as 'source' | 'selected')}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'selected' || val === 'artifact') {
+                        setEnvTarget(val);
+                      }
+                    }}
                   >
-                    <option value="source">All sources</option>
-                    <option value="selected">Configured view</option>
+                    <option value="selected">Source edits (selected)</option>
+                    <option value="artifact">Inlined artifact</option>
                   </select>
                 </label>
               </div>
               <button
                 type="button"
                 className="ControlButton ControlButton--secondary"
-                disabled={!envNamesText.trim()}
+                disabled={!canRunViewTransformations || !envNamesText.trim()}
+                title={
+                  canRunViewTransformations
+                    ? 'Preview or generate environment removal'
+                    : viewTransformationReason || 'A ready view is required'
+                }
                 onClick={() => {
                   const names = envNamesText
                     .split(',')
@@ -344,44 +329,95 @@ export default function ControlPanel({
               </button>
             </div>
           ) : null}
+        </div>
+
+        {/* Card 4: Pipeline A — Export Realized Project */}
+        <div className="ControlCard ControlCard--entry">
+          <div className="ControlCardHeader">
+            <div className="ControlConditionsHeader">
+              <h3>Export Project</h3>
+              <span className="ControlPipelineBadge">Pipeline A</span>
+            </div>
+            <p className="ControlSubtitle">
+              Emit condition-free artifacts from the realized view
+            </p>
+          </div>
+          <div className="ControlFieldGrid">
+            <label className="ControlField" htmlFor="entryFile">
+              <span>Entry file</span>
+              <input
+                id="entryFile"
+                className="ControlInput"
+                type="text"
+                value={entryFile || 'No file selected'}
+                readOnly
+              />
+            </label>
+
+            <label className="ControlField" htmlFor="outputName">
+              <span>Output file name (single artifact)</span>
+              <input
+                id="outputName"
+                className="ControlInput"
+                type="text"
+                placeholder={outputPreview}
+                value={options.outputName}
+                onChange={(e) => onChange({ ...options, outputName: e.target.value })}
+              />
+            </label>
+          </div>
+
+          <div className="ControlSubgroup">
+            <h4>Input Handling</h4>
+            <label className="ControlField" htmlFor="handleInputCmd">
+              <select
+                id="handleInputCmd"
+                className="ControlInput"
+                value={options.inputHandling}
+                aria-label="Input handling"
+                onChange={(e) => {
+                  const mode = e.target.value;
+                  if (isInputHandlingOption(mode)) onChange({ ...options, inputHandling: mode });
+                }}
+              >
+                <option value="preserve">preserve</option>
+                <option value="inline">inline</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="ControlSubgroup">
+            <h4>Comments</h4>
+            <label className="ControlCheck">
+              <input
+                type="checkbox"
+                checked={options.suppressComments}
+                onChange={toggleSuppressComments}
+              />
+              <span>Suppress comments</span>
+            </label>
+            <label className="ControlCheck">
+              <input
+                type="checkbox"
+                checked={options.suppressCommentEnvironments}
+                onChange={toggleSuppressCommentEnvs}
+              />
+              <span>Suppress comment environments</span>
+            </label>
+          </div>
 
           {onExportProject ? (
-            <div className="ControlSubgroup">
-              <h4>Materialize &amp; Export Project</h4>
-              <div className="ControlFieldGrid">
-                <label className="ControlField" htmlFor="exportConditions">
-                  <span>Conditions</span>
-                  <select
-                    id="exportConditions"
-                    className="ControlInput"
-                    value={exportConditions}
-                    onChange={(e) =>
-                      setExportConditions(e.target.value as 'preserve' | 'materialize')
-                    }
-                  >
-                    <option value="preserve">Preserve</option>
-                    <option value="materialize">Materialize</option>
-                  </select>
-                </label>
-                <label className="ControlField" htmlFor="exportInputs">
-                  <span>Inputs</span>
-                  <select
-                    id="exportInputs"
-                    className="ControlInput"
-                    value={exportInputs}
-                    onChange={(e) =>
-                      setExportInputs(e.target.value as 'preserve' | 'inline')
-                    }
-                  >
-                    <option value="preserve">Preserve</option>
-                    <option value="inline">Inline</option>
-                  </select>
-                </label>
-              </div>
+            <div className="ControlPipelineAction">
               <button
                 type="button"
-                className="ControlButton ControlButton--secondary"
-                onClick={() => onExportProject(exportConditions, exportInputs)}
+                className="ControlButton ControlButton--primary"
+                onClick={onExportProject}
+                disabled={!canExportProject}
+                title={
+                  canExportProject
+                    ? `Export realized project from ${entryFile}`
+                    : exportReason || 'Configure a ready project view first'
+                }
               >
                 Export Project
               </button>
@@ -405,7 +441,7 @@ export default function ControlPanel({
                   </button>
                 ) : null}
               </div>
-              <p className="ControlSubtitle">Review or export materialized files</p>
+              <p className="ControlSubtitle">Review or download condition-realized output files</p>
             </div>
             <div className="ArtifactsList">
               {artifacts.map((art) => (

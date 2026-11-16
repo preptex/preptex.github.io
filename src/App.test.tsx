@@ -2,59 +2,71 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import App from './App';
 
-test('renders the main panes with Run disabled until a file is parsed', () => {
+test('renders the main panes with Export Project disabled until a ready view is configured', () => {
   render(<App />);
   expect(screen.getByRole('region', { name: 'Files' })).toBeInTheDocument();
   expect(screen.queryByRole('region', { name: 'Status bar' })).not.toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Code' })).toBeInTheDocument();
   expect(screen.getByRole('region', { name: 'AST tree' })).toBeInTheDocument();
 
-  // Open Operations dialog
   fireEvent.click(screen.getByRole('button', { name: 'Operations...' }));
   expect(screen.getByRole('region', { name: 'Control panel' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Export Project' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Realize Conditions in Place' })).toBeDisabled();
 });
 
-test('uploads, transforms with the selected options, and selects the named output', async () => {
+test('uploads, exports realized project artifact, and displays it without mutating sources', async () => {
   render(<App />);
   userEvent.upload(screen.getByLabelText('Upload files'), [
     new File(['Hello\n% hidden\nworld'], 'main.tex', { type: 'text/plain' }),
   ]);
-  // Dismiss setup dialog
-  fireEvent.click(await screen.findByRole('button', { name: 'Continue inspecting sources' }));
 
-  // Open operations
+  await waitFor(() => {
+    expect(screen.getByLabelText('Project Entry File')).toHaveValue('main.tex');
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
+
   const opsBtn = await screen.findByRole('button', { name: 'Operations...' });
   fireEvent.click(opsBtn);
 
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Export Project' })).toBeEnabled());
   fireEvent.click(screen.getByLabelText('Suppress comments'));
-  fireEvent.change(screen.getByLabelText('Output file name'), { target: { value: 'clean' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Export Project' }));
+
+  expect(await screen.findByText(/generated artifacts \(1\)/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'View' }));
   expect(
-    await screen.findByText('clean.processed.tex', { selector: '.CodeviewFilename' })
+    await screen.findByText('main.tex', { selector: '.CodeviewFilename' }),
   ).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Download clean.processed.tex' })).toBeInTheDocument();
 });
 
-test('reports malformed source with a typed error and prevents running an old snapshot', async () => {
+test('reports structural error on configured view while keeping Pipeline B condition realization available', async () => {
   render(<App />);
-  userEvent.upload(screen.getByLabelText('Upload files'), new File(['\\begin{document}'], 'bad.tex'));
-  // Malformed source opens Log dialog popup automatically
-  expect(await screen.findByRole('dialog', { name: 'Processing Log' })).toBeInTheDocument();
-  expect(screen.getByRole('alert')).toHaveTextContent('bad.tex:');
-  expect(screen.getByRole('alert')).toHaveTextContent('syntax-error');
+  userEvent.upload(
+    screen.getByLabelText('Upload files'),
+    new File(['\\newif\\ifcam\\camtrue\n\\ifcam\n\\begin{document}\nKeep\n\\fi'], 'bad.tex'),
+  );
 
-  // Close log dialog
+  await waitFor(() => {
+    expect(screen.getByLabelText('Project Entry File')).toHaveValue('bad.tex');
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
+
+  // Blocked structural view opens Log dialog popup automatically
+  expect(await screen.findByRole('dialog', { name: 'Processing Log' })).toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent('structural-error');
+  expect(screen.getByRole('alert')).toHaveTextContent('bad.tex:');
+
   fireEvent.click(screen.getByRole('button', { name: 'Close log dialog' }));
 
-  // Open operations to verify Run is disabled
+  // Pipeline A Export Project is disabled, but Pipeline B Condition Realization is enabled
   fireEvent.click(screen.getByRole('button', { name: 'Operations...' }));
-  expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Export Project' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Realize Conditions in Place' })).toBeEnabled();
 });
 
 test('ignores malformed persisted AST options', () => {
-  window.localStorage.setItem('preptex.astview.options.v5', JSON.stringify({
+  window.localStorage.setItem('preptex.astview.options.v6', JSON.stringify({
     visibleKinds: [null, 9], commandCards: 42, selectedCommands: 'title',
   }));
   render(<App />);
@@ -67,9 +79,7 @@ test('first upload opens Project Setup dialog, and closing permits inspecting so
   userEvent.upload(screen.getByLabelText('Upload files'), [
     new File(['\\ref{missing:target}'], 'doc.tex', { type: 'text/plain' }),
   ]);
-  // Dialog opens on first upload
   expect(await screen.findByRole('dialog', { name: 'Project Settings' })).toBeInTheDocument();
-  // Dismiss dialog
   fireEvent.click(screen.getByRole('button', { name: 'Continue inspecting sources' }));
   await waitFor(() => {
     expect(screen.queryByRole('dialog', { name: 'Project Settings' })).not.toBeInTheDocument();
@@ -82,26 +92,19 @@ test('runs independent reference analysis and shows findings in Log tab', async 
   userEvent.upload(screen.getByLabelText('Upload files'), [
     new File(['\\ref{missing:label}'], 'main.tex', { type: 'text/plain' }),
   ]);
-  // Wait for file to finish uploading and dialog to recommend entry
   await waitFor(() => {
     expect(screen.getByLabelText('Project Entry File')).toHaveValue('main.tex');
   });
-  // Apply setup dialog so entry is configured
-  const applyBtn = screen.getByRole('button', { name: 'Apply Configuration' });
-  fireEvent.click(applyBtn);
+  fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
 
-  // Open operations
   const opsBtn = await screen.findByRole('button', { name: 'Operations...' });
   fireEvent.click(opsBtn);
 
-  // Check References button should be enabled
   const checkRefBtn = await screen.findByRole('button', { name: 'Check References' });
   await waitFor(() => expect(checkRefBtn).toBeEnabled());
 
-  // Run analysis - automatically closes modal and opens Log dialog
   fireEvent.click(checkRefBtn);
 
-  // Shows missing-reference finding in Log dialog
   expect(await screen.findByRole('dialog', { name: 'Processing Log' })).toBeInTheDocument();
   expect(await screen.findByText(/missing-reference/i)).toBeInTheDocument();
 });
@@ -114,21 +117,45 @@ test('toggles AST view structure and source modes', async () => {
   await waitFor(() => {
     expect(screen.getByLabelText('Project Entry File')).toHaveValue('main.tex');
   });
-  const applyBtn = screen.getByRole('button', { name: 'Apply Configuration' });
-  fireEvent.click(applyBtn);
+  fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
 
-  // Toggle to source mode
   const sourceModeBtn = await screen.findByRole('button', { name: 'Source' });
   fireEvent.click(sourceModeBtn);
   expect(screen.getByRole('button', { name: 'Source' })).toHaveClass('AstTreeModeBtn--active');
 
-  // Toggle back to structure mode
   const structureModeBtn = screen.getByRole('button', { name: 'Structure' });
   fireEvent.click(structureModeBtn);
   expect(screen.getByRole('button', { name: 'Structure' })).toHaveClass('AstTreeModeBtn--active');
 });
 
-test('previews comment suppression and applies edits atomically (UI-14, UI-28)', async () => {
+test('realizes conditions in place and switches to condition-free mode', async () => {
+  render(<App />);
+  userEvent.upload(screen.getByLabelText('Upload files'), [
+    new File(['\\newif\\ifdraft\\drafttrue\n\\ifdraft\nDraft text\n\\else\nFinal text\n\\fi'], 'main.tex', { type: 'text/plain' }),
+  ]);
+  await waitFor(() => {
+    expect(screen.getByLabelText('Project Entry File')).toHaveValue('main.tex');
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Operations...' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Realize Conditions in Place' }));
+
+  const dialog = await screen.findByRole('dialog', { name: /edit preview/i });
+  expect(dialog).toBeInTheDocument();
+  expect(within(dialog).getByText(/Condition-free \(none\)/i)).toBeInTheDocument();
+
+  fireEvent.click(within(dialog).getByRole('button', { name: /apply edits to sources/i }));
+
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog', { name: /edit preview/i })).not.toBeInTheDocument();
+  });
+
+  expect(screen.getByText('Condition-free (none)')).toBeInTheDocument();
+  expect(screen.getByText('Ready')).toBeInTheDocument();
+});
+
+test('previews comment suppression and applies edits atomically', async () => {
   render(<App />);
   userEvent.upload(screen.getByLabelText('Upload files'), [
     new File(['% A comment to remove\nKeep this text\n'], 'main.tex', { type: 'text/plain' }),
@@ -138,30 +165,25 @@ test('previews comment suppression and applies edits atomically (UI-14, UI-28)',
   });
   fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
 
-  // Open operations
   const opsBtn = await screen.findByRole('button', { name: 'Operations...' });
   fireEvent.click(opsBtn);
 
-  // Click Preview Comments
   const previewCommentsBtn = await screen.findByRole('button', { name: /preview comments/i });
   fireEvent.click(previewCommentsBtn);
 
-  // Edit Preview dialog opens with proposed edits
   const dialog = await screen.findByRole('dialog', { name: /edit preview/i });
   expect(dialog).toBeInTheDocument();
   expect(within(dialog).getByText(/% A comment to remove/i)).toBeInTheDocument();
 
-  // Click Apply Edits to Sources
   const applyEditsBtn = within(dialog).getByRole('button', { name: /apply edits to sources/i });
   fireEvent.click(applyEditsBtn);
 
-  // Dialog closes
   await waitFor(() => {
     expect(screen.queryByRole('dialog', { name: /edit preview/i })).not.toBeInTheDocument();
   });
 });
 
-test('previews named environment removal and allows discarding (UI-27)', async () => {
+test('previews named environment removal and allows discarding', async () => {
   render(<App />);
   userEvent.upload(screen.getByLabelText('Upload files'), [
     new File(['\\begin{C}\nDebug info\n\\end{C}\nMain content\n'], 'main.tex', { type: 'text/plain' }),
@@ -171,24 +193,19 @@ test('previews named environment removal and allows discarding (UI-27)', async (
   });
   fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
 
-  // Open operations
   const opsBtn = await screen.findByRole('button', { name: 'Operations...' });
   fireEvent.click(opsBtn);
 
-  // Enter environment names
   const envInput = await screen.findByPlaceholderText(/e\.g\. comment, C/i);
   fireEvent.change(envInput, { target: { value: 'C' } });
 
-  // Click Preview Removal
   const previewRemovalBtn = screen.getByRole('button', { name: /preview removal/i });
   fireEvent.click(previewRemovalBtn);
 
-  // Edit preview dialog opens
   const envDialog = await screen.findByRole('dialog', { name: /edit preview/i });
   expect(envDialog).toBeInTheDocument();
   expect(within(envDialog).getByText(/Debug info/i)).toBeInTheDocument();
 
-  // Click Discard
   const discardBtn = within(envDialog).getByRole('button', { name: /discard/i });
   fireEvent.click(discardBtn);
 
@@ -197,7 +214,7 @@ test('previews named environment removal and allows discarding (UI-27)', async (
   });
 });
 
-test('exports project and shows generated artifacts with ZIP download (UI-20)', async () => {
+test('exports project and shows generated artifacts with ZIP download', async () => {
   render(<App />);
   userEvent.upload(screen.getByLabelText('Upload files'), [
     new File(['\\documentclass{article}\n\\begin{document}\nHello World\n\\end{document}'], 'main.tex', { type: 'text/plain' }),
@@ -207,15 +224,12 @@ test('exports project and shows generated artifacts with ZIP download (UI-20)', 
   });
   fireEvent.click(screen.getByRole('button', { name: 'Apply Configuration' }));
 
-  // Open operations
   const opsBtn = await screen.findByRole('button', { name: 'Operations...' });
   fireEvent.click(opsBtn);
 
-  // Click Export Project
   const exportBtn = await screen.findByRole('button', { name: /export project/i });
   fireEvent.click(exportBtn);
 
-  // Generated artifacts section appears
   const artifactHeadings = await screen.findAllByText(/generated artifacts \(1\)/i);
   expect(artifactHeadings.length).toBeGreaterThan(0);
   expect(screen.getAllByRole('button', { name: /download zip/i }).length).toBeGreaterThan(0);
@@ -223,14 +237,11 @@ test('exports project and shows generated artifacts with ZIP download (UI-20)', 
 
 test('opens and closes log popup via Log button in toolbar', async () => {
   render(<App />);
-  // Bottom panel is completely removed
   expect(screen.queryByRole('region', { name: 'Status bar' })).not.toBeInTheDocument();
 
-  // Open log dialog via Log button in ConfigurationSummary
   fireEvent.click(screen.getByRole('button', { name: 'Log' }));
   expect(screen.getByRole('dialog', { name: 'Processing Log' })).toBeInTheDocument();
 
-  // Close log dialog via Close button
   fireEvent.click(screen.getByRole('button', { name: 'Close log dialog' }));
   expect(screen.queryByRole('dialog', { name: 'Processing Log' })).not.toBeInTheDocument();
 });

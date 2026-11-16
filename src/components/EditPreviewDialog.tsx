@@ -11,6 +11,8 @@ export interface EditPreviewDialogProps {
   readonly onApply: () => void;
   readonly onDiscard: () => void;
   readonly error: ProcessingError | null;
+  readonly switchToConditionFree?: boolean;
+  readonly onToggleSwitchToConditionFree?: (next: boolean) => void;
 }
 
 export const EditPreviewDialog: React.FC<EditPreviewDialogProps> = ({
@@ -21,6 +23,8 @@ export const EditPreviewDialog: React.FC<EditPreviewDialogProps> = ({
   onApply,
   onDiscard,
   error,
+  switchToConditionFree,
+  onToggleSwitchToConditionFree,
 }) => {
   if (!isOpen) {
     return null;
@@ -28,15 +32,21 @@ export const EditPreviewDialog: React.FC<EditPreviewDialogProps> = ({
 
   const edits = editPlan?.edits ?? [];
   const affectedFiles = Array.from(new Set(edits.map((e) => e.path)));
+  const isConditionRealization =
+    editPlan?.provenance.request.operation === 'realize-conditions';
 
   return (
     <div className="edit-preview-overlay" role="dialog" aria-modal="true" aria-labelledby="edit-preview-title">
       <div className="edit-preview-modal">
         <div className="edit-preview-header">
           <div>
-            <h2 id="edit-preview-title">Edit Preview</h2>
+            <h2 id="edit-preview-title">
+              {isConditionRealization ? 'Edit Preview — Condition Realization' : 'Edit Preview'}
+            </h2>
             <p className="edit-preview-subtitle">
-              Review proposed edits before applying them atomically to source files.
+              {isConditionRealization
+                ? 'Review condition directives and inactive branches to strip from source files.'
+                : 'Review proposed edits before applying them atomically to source files.'}
             </p>
           </div>
           <button
@@ -70,6 +80,19 @@ export const EditPreviewDialog: React.FC<EditPreviewDialogProps> = ({
               {edits.length} {edits.length === 1 ? 'edit' : 'edits'} proposed
             </span>
           </div>
+
+          {isConditionRealization && onToggleSwitchToConditionFree ? (
+            <label className="edit-preview-option">
+              <input
+                type="checkbox"
+                checked={Boolean(switchToConditionFree)}
+                onChange={(e) => onToggleSwitchToConditionFree(e.target.checked)}
+              />
+              <span>
+                Switch project condition policy to <code>Condition-free (none)</code> after applying (INV-4)
+              </span>
+            </label>
+          ) : null}
 
           {edits.length === 0 ? (
             <div className="edit-preview-empty">No edits proposed for this operation.</div>

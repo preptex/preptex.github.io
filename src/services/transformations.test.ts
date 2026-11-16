@@ -2,6 +2,7 @@ import {
   applyProjectEditsAdapter,
   createProjectSnapshotAdapter,
   planTransformationAdapter,
+  realizeProjectConditionsAdapter,
   resolveProjectViewAdapter,
   selectProjectNodeAdapter,
   validateProjectEditPlanAdapter,
@@ -9,7 +10,7 @@ import {
 } from './core';
 
 describe('Transformations and Node Operations Service Integration', () => {
-  it('plans and applies comment suppression on source', () => {
+  it('plans and applies comment suppression on realized view (INV-6)', () => {
     const snapshot = createProjectSnapshotAdapter([
       {
         path: 'main.tex',
@@ -17,18 +18,20 @@ describe('Transformations and Node Operations Service Integration', () => {
         source: '% A comment\nHello World\n% Another comment\n',
       },
     ]);
+    const view = resolveProjectViewAdapter(snapshot, { entryPath: 'main.tex' });
+    expect(view.status).toBe('ready');
+    if (view.status !== 'ready') return;
 
-    const result = planTransformationAdapter(snapshot, {
+    const result = planTransformationAdapter(view, {
       operation: 'suppress-comments',
-      options: { target: 'source' },
+      options: { target: 'selected' },
     });
 
     expect(result.kind).toBe('transformation');
     expect(result.editPlan).not.toBeNull();
     expect(result.editPlan?.edits.length).toBeGreaterThan(0);
 
-    // Apply edits
-    const updated = applyProjectEditsAdapter(snapshot, result.editPlan!);
+    const updated = applyProjectEditsAdapter(snapshot, result.editPlan!, view);
     const mainFile = updated.files.find((f) => f.path === 'main.tex');
     expect(mainFile?.source).not.toContain('% A comment');
     expect(mainFile?.source).toContain('Hello World');
@@ -42,24 +45,27 @@ describe('Transformations and Node Operations Service Integration', () => {
         source: '% Line comment\n\\begin{comment}\nEnv comment\n\\end{comment}\nVisible text\n',
       },
     ]);
+    const view = resolveProjectViewAdapter(snapshot, { entryPath: 'main.tex' });
+    expect(view.status).toBe('ready');
+    if (view.status !== 'ready') return;
 
-    const result = planTransformationAdapter(snapshot, {
+    const result = planTransformationAdapter(view, {
       operation: 'suppress-comments',
       options: {
-        target: 'source',
+        target: 'selected',
         suppressCommentEnvironments: true,
       },
     });
 
     expect(result.editPlan).not.toBeNull();
-    const updated = applyProjectEditsAdapter(snapshot, result.editPlan!);
+    const updated = applyProjectEditsAdapter(snapshot, result.editPlan!, view);
     const mainFile = updated.files.find((f) => f.path === 'main.tex');
     expect(mainFile?.source).not.toContain('% Line comment');
     expect(mainFile?.source).not.toContain('Env comment');
     expect(mainFile?.source).toContain('Visible text');
   });
 
-  it('removes environments by name across source scope (UI-27)', () => {
+  it('removes environments by name across realized view', () => {
     const snapshot = createProjectSnapshotAdapter([
       {
         path: 'main.tex',
@@ -67,23 +73,26 @@ describe('Transformations and Node Operations Service Integration', () => {
         source: '\\begin{C}\nCustom debug info\n\\end{C}\n\\begin{document}\nKeep this\n\\end{document}\n',
       },
     ]);
+    const view = resolveProjectViewAdapter(snapshot, { entryPath: 'main.tex' });
+    expect(view.status).toBe('ready');
+    if (view.status !== 'ready') return;
 
-    const result = planTransformationAdapter(snapshot, {
+    const result = planTransformationAdapter(view, {
       operation: 'remove-environments',
       options: {
-        target: 'source',
+        target: 'selected',
         names: ['C'],
       },
     });
 
     expect(result.editPlan).not.toBeNull();
-    const updated = applyProjectEditsAdapter(snapshot, result.editPlan!);
+    const updated = applyProjectEditsAdapter(snapshot, result.editPlan!, view);
     const mainFile = updated.files.find((f) => f.path === 'main.tex');
     expect(mainFile?.source).not.toContain('Custom debug info');
     expect(mainFile?.source).toContain('Keep this');
   });
 
-  it('performs node removal, renaming and wrapping on configured view (UI-26, UI-29, UI-30)', () => {
+  it('performs node removal, renaming and wrapping on configured view', () => {
     const snapshot = createProjectSnapshotAdapter([
       {
         path: 'main.tex',
@@ -96,7 +105,6 @@ describe('Transformations and Node Operations Service Integration', () => {
     expect(view.status).toBe('ready');
     if (view.status !== 'ready') return;
 
-    // Find the itemize environment node
     const allNodes = walkConfiguredNodesAdapter(view.root);
     const itemizeNode = allNodes.find(
       (n) => n.kind === 'environment' && (n as { name?: string }).name === 'itemize',
@@ -105,7 +113,6 @@ describe('Transformations and Node Operations Service Integration', () => {
 
     const selection = selectProjectNodeAdapter(view, itemizeNode!.occurrenceKey);
 
-    // 1. Test rename environment: itemize -> enumerate
     const renameResult = planTransformationAdapter(view, {
       operation: 'edit-nodes',
       options: {
@@ -121,7 +128,6 @@ describe('Transformations and Node Operations Service Integration', () => {
     expect(renamedSource).toContain('\\end{enumerate}');
     expect(renamedSource).not.toContain('itemize');
 
-    // 2. Test wrap node in center environment
     const wrapResult = planTransformationAdapter(view, {
       operation: 'edit-nodes',
       options: {
@@ -136,7 +142,6 @@ describe('Transformations and Node Operations Service Integration', () => {
     expect(wrappedSource).toContain('\\begin{itemize}');
     expect(wrappedSource).toContain('\\end{center}');
 
-    // 3. Test remove node
     const removeResult = planTransformationAdapter(view, {
       operation: 'edit-nodes',
       options: {
@@ -159,20 +164,21 @@ describe('Transformations and Node Operations Service Integration', () => {
         source: '% Comment\nText\n',
       },
     ]);
+    const view = resolveProjectViewAdapter(snapshot, { entryPath: 'main.tex' });
+    expect(view.status).toBe('ready');
+    if (view.status !== 'ready') return;
 
-    const result = planTransformationAdapter(snapshot, {
+    const result = planTransformationAdapter(view, {
       operation: 'suppress-comments',
-      options: { target: 'source' },
+      options: { target: 'selected' },
     });
 
     const editPlan = result.editPlan!;
     expect(editPlan).toBeDefined();
 
-    // Validation against the original snapshot is eligible
-    const validation = validateProjectEditPlanAdapter(snapshot, editPlan);
+    const validation = validateProjectEditPlanAdapter(snapshot, editPlan, view);
     expect(validation.eligible).toBe(true);
 
-    // Create a modified snapshot (different version / content)
     const modifiedSnapshot = createProjectSnapshotAdapter([
       {
         path: 'main.tex',
@@ -181,13 +187,12 @@ describe('Transformations and Node Operations Service Integration', () => {
       },
     ]);
 
-    // Validation against modified snapshot fails or applying throws
-    const staleValidation = validateProjectEditPlanAdapter(modifiedSnapshot, editPlan);
+    const staleValidation = validateProjectEditPlanAdapter(modifiedSnapshot, editPlan, view);
     expect(staleValidation.eligible).toBe(false);
-    expect(() => applyProjectEditsAdapter(modifiedSnapshot, editPlan)).toThrow();
+    expect(() => applyProjectEditsAdapter(modifiedSnapshot, editPlan, view)).toThrow();
   });
 
-  it('materializes conditions and inlines inputs without altering sources', () => {
+  it('realizes conditions standalone (Pipeline B) and exports realized project (Pipeline A)', () => {
     const snapshot = createProjectSnapshotAdapter([
       {
         path: 'main.tex',
@@ -196,12 +201,20 @@ describe('Transformations and Node Operations Service Integration', () => {
       },
     ]);
 
+    const realized = realizeProjectConditionsAdapter(snapshot, {
+      entryPath: 'main.tex',
+      conditions: { mode: 'source' },
+    });
+    expect(realized.status).toBe('ready');
+    expect(realized.artifacts[0]?.source).toContain('Active text');
+    expect(realized.artifacts[0]?.source).not.toContain('Inactive text');
+
     const view = resolveProjectViewAdapter(snapshot, { entryPath: 'main.tex' });
     expect(view.status).toBe('ready');
     if (view.status !== 'ready') return;
 
     const result = planTransformationAdapter(view, {
-      operation: 'materialize',
+      operation: 'export-project',
       options: {
         inputs: 'preserve',
         suppressComments: true,
@@ -212,7 +225,6 @@ describe('Transformations and Node Operations Service Integration', () => {
     const artifact = result.artifacts[0];
     expect(artifact?.source).toContain('Active text');
     expect(artifact?.source).not.toContain('Inactive text');
-    // Source files in snapshot remain completely unchanged
     expect(snapshot.files.find((f) => f.path === 'main.tex')?.source).toContain('Inactive text');
   });
 });

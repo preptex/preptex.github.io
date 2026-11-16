@@ -9,17 +9,17 @@ import {
   inspectProjectEnvironments,
   isConfiguredContainerNode,
   lookupProjectSource,
-  mergeProjects,
-  parseProject,
   planTransformation,
   PrepTexError,
   PrepTexErrorCode,
-  PrepTexSyntaxError,
   ProjectOperationError,
+  realizeProjectConditions,
   resolveProjectView,
   runAnalysis,
+  runProjectPipeline,
   selectProjectNode,
   sourceOffsetAt,
+  tokenizeFile,
   updateProjectSnapshot as updateProjectSnapshotCore,
   validateProjectEditPlan,
   walkConfiguredNodes,
@@ -27,6 +27,8 @@ import {
 import type {
   AnalysisRequest,
   AnalysisResult,
+  ConditionRealizationRequest,
+  ConditionRealizationResult,
   ConfiguredContainerNode,
   ConfiguredNode,
   EnvironmentInventory,
@@ -37,8 +39,9 @@ import type {
   OperationCapability,
   OperationFailure,
   OperationRequest,
-  ParsedProject,
   ProjectEditPlan,
+  ProjectPipelineOptions,
+  ProjectPipelineResult,
   ProjectSnapshot as CoreProjectSnapshot,
   ProjectSourceChange,
   ProjectSourceIndex,
@@ -48,22 +51,13 @@ import type {
   SourceLookupHit,
   SourceLookupQuery,
   SourceScope,
-  SyntaxDiagnostic,
+  SourceToken,
   TransformationRequest,
   TransformationResult,
-  TransformOptions,
   ViewConfiguration,
 } from '@preptex/core';
-import type { CoreOptionsUI } from '../model/useControl';
-import type { FilesMap } from '../types/files';
 
 export type ProcessingError =
-  | {
-      readonly kind: 'syntax';
-      readonly message: string;
-      readonly code: PrepTexErrorCode.SyntaxError;
-      readonly diagnostic: SyntaxDiagnostic;
-    }
   | {
       readonly kind: 'operation';
       readonly message: string;
@@ -82,14 +76,6 @@ export function toProcessingError(error: unknown): ProcessingError {
       failure: error.failure,
     };
   }
-  if (error instanceof PrepTexSyntaxError) {
-    return {
-      kind: 'syntax',
-      message: error.message,
-      code: error.code,
-      diagnostic: error.diagnostic,
-    };
-  }
   if (error instanceof PrepTexError) {
     return {
       kind: 'core',
@@ -104,8 +90,12 @@ export function toProcessingError(error: unknown): ProcessingError {
 }
 
 // ---------------------------------------------------------------------------
-// Pure Core Adapters (@preptex/core@0.3.0)
+// Pure Core Adapters (@preptex/core@0.4.0)
 // ---------------------------------------------------------------------------
+
+export function tokenizeFileAdapter(source: string): readonly SourceToken[] {
+  return tokenizeFile(source);
+}
 
 export function createProjectSnapshotAdapter(
   files: readonly SourceFile[],
@@ -143,11 +133,25 @@ export function getSelectedEnvironmentAdapter(
   return getSelectedEnvironment(snapshot, selection);
 }
 
+export function realizeProjectConditionsAdapter(
+  snapshot: CoreProjectSnapshot,
+  request?: ConditionRealizationRequest,
+): ConditionRealizationResult {
+  return realizeProjectConditions(snapshot, request);
+}
+
 export function resolveProjectViewAdapter(
   snapshot: CoreProjectSnapshot,
   configuration: ViewConfiguration,
 ): ProjectView {
   return resolveProjectView(snapshot, configuration);
+}
+
+export function runProjectPipelineAdapter(
+  files: readonly SourceFile[],
+  options: ProjectPipelineOptions,
+): ProjectPipelineResult {
+  return runProjectPipeline(files, options);
 }
 
 export function checkOperationCapabilityAdapter(
@@ -236,56 +240,4 @@ export function validateProjectEditPlanAdapter(
   } catch (err: unknown) {
     return { eligible: false, error: toProcessingError(err) };
   }
-}
-
-// ---------------------------------------------------------------------------
-// Legacy Website Adapters (Kept for compatibility during phased migration)
-// ---------------------------------------------------------------------------
-
-interface SnapshotBase {
-  readonly sources: FilesMap;
-  readonly version: number;
-}
-
-export type ProjectSnapshot = SnapshotBase & (
-  | { readonly status: 'ready'; readonly project: ParsedProject }
-  | { readonly status: 'error'; readonly error: ProcessingError }
-);
-
-/** Parse changed buffers only; rebuild after deletion or a failed parse. */
-export function updateProjectSnapshot(
-  previous: ProjectSnapshot | null,
-  sources: FilesMap,
-): ProjectSnapshot {
-  const version = (previous?.version ?? 0) + 1;
-  const files: readonly SourceFile[] = Object.entries(sources).map(([path, source]) => ({
-    path, source, version,
-  }));
-
-  try {
-    const hasRemovals = previous && Object.keys(previous.sources).some(
-      (path) => !Object.prototype.hasOwnProperty.call(sources, path),
-    );
-    let project: ParsedProject;
-    if (previous?.status === 'ready' && !hasRemovals) {
-      const changed = files.filter((file) => previous.sources[file.path] !== file.source);
-      project = changed.length
-        ? mergeProjects(previous.project, parseProject(changed))
-        : previous.project;
-    } else {
-      project = parseProject(files);
-    }
-    return { status: 'ready', sources, version, project };
-  } catch (error: unknown) {
-    return { status: 'error', sources, version, error: toProcessingError(error) };
-  }
-}
-
-export function toTransformOptions(options: CoreOptionsUI): TransformOptions {
-  return {
-    suppressComments: options.suppressComments,
-    inputHandling: options.inputHandling,
-    // Omission preserves syntax; an empty array evaluates every condition as false.
-    ...(options.handleIfConditions ? { enabledConditions: options.enabledConditions } : {}),
-  };
 }

@@ -13,6 +13,15 @@ export interface ProjectSetupDialogProps {
   readonly detectedConditions: readonly string[];
 }
 
+function isConditionPolicyMode(value: string): value is ConditionPolicy['mode'] {
+  return (
+    value === 'source' ||
+    value === 'source-with-overrides' ||
+    value === 'manual' ||
+    value === 'none'
+  );
+}
+
 export function ProjectSetupDialog({
   isOpen,
   onClose,
@@ -32,7 +41,7 @@ export function ProjectSetupDialog({
   const [traversal, setTraversal] = useState<'project' | 'file-only'>(
     configuration.traversal,
   );
-  const [policyMode, setPolicyMode] = useState<'source' | 'source-with-overrides' | 'manual'>(
+  const [policyMode, setPolicyMode] = useState<ConditionPolicy['mode']>(
     configuration.conditionPolicy.mode,
   );
   const [conditionOverrides, setConditionOverrides] = useState<Record<string, boolean>>(() => {
@@ -45,7 +54,6 @@ export function ProjectSetupDialog({
     return {};
   });
 
-  // Reset local draft whenever dialog opens or configuration changes
   useEffect(() => {
     if (isOpen) {
       const keys = Object.keys(files);
@@ -67,7 +75,6 @@ export function ProjectSetupDialog({
     }
   }, [isOpen, configuration, files]);
 
-  // Handle Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -95,7 +102,9 @@ export function ProjectSetupDialog({
 
   const handleApply = () => {
     let conditionPolicy: ConditionPolicy;
-    if (policyMode === 'manual') {
+    if (policyMode === 'none') {
+      conditionPolicy = { mode: 'none' };
+    } else if (policyMode === 'manual') {
       conditionPolicy = { mode: 'manual', values: conditionOverrides };
     } else if (policyMode === 'source-with-overrides') {
       conditionPolicy = { mode: 'source-with-overrides', overrides: conditionOverrides };
@@ -196,47 +205,57 @@ export function ProjectSetupDialog({
               className="ProjectSetupSelect"
               value={policyMode}
               onChange={(e) => {
-                const nextMode = e.target.value as 'source' | 'source-with-overrides' | 'manual';
-                setPolicyMode(nextMode);
+                if (isConditionPolicyMode(e.target.value)) {
+                  setPolicyMode(e.target.value);
+                }
               }}
             >
               <option value="source">Follow source declarations and setters (default)</option>
               <option value="source-with-overrides">Follow source with named overrides</option>
               <option value="manual">Force explicit boolean values</option>
+              <option value="none">None — assert source is condition-free</option>
             </select>
             <p className="ProjectSetupHelp">
-              Forced values evaluate the same at every test occurrence and are not changed by source setters.
+              {policyMode === 'none'
+                ? 'Disables condition preprocessing: any unrealized conditional blocks the structural view (use after standalone Condition Realization).'
+                : 'Forced values evaluate the same at every test occurrence and are not changed by source setters.'}
             </p>
           </div>
 
           {/* Recognized condition names */}
-          {detectedConditions.length > 0 && policyMode !== 'source' && (
-            <div className="ProjectSetupSection">
-              <span className="ProjectSetupLabel">Recognized Conditions</span>
-              <div className="ProjectSetupConditionsList">
-                {detectedConditions.map((cond) => {
-                  const val = conditionOverrides[cond];
-                  const currentChoice =
-                    val === true ? 'true' : val === false ? 'false' : 'follow';
-                  return (
-                    <div key={cond} className="ProjectSetupConditionRow">
-                      <span className="ProjectSetupConditionName">\if{cond}</span>
-                      <select
-                        className="ProjectSetupConditionSelect"
-                        value={currentChoice}
-                        onChange={(e) => handleConditionChange(cond, e.target.value)}
-                        aria-label={`Setting for \\if${cond}`}
-                      >
-                        <option value="follow">Follow source</option>
-                        <option value="true">Force true</option>
-                        <option value="false">Force false</option>
-                      </select>
-                    </div>
-                  );
-                })}
+          {detectedConditions.length > 0 &&
+            (policyMode === 'source-with-overrides' || policyMode === 'manual') && (
+              <div className="ProjectSetupSection">
+                <span className="ProjectSetupLabel">Recognized Conditions</span>
+                <div className="ProjectSetupConditionsList">
+                  {detectedConditions.map((cond) => {
+                    const val = conditionOverrides[cond];
+                    const currentChoice =
+                      val === true ? 'true' : val === false ? 'false' : 'follow';
+                    return (
+                      <div key={cond} className="ProjectSetupConditionRow">
+                        <span className="ProjectSetupConditionName">\if{cond}</span>
+                        <select
+                          className="ProjectSetupConditionSelect"
+                          value={currentChoice}
+                          onChange={(e) => handleConditionChange(cond, e.target.value)}
+                          aria-label={`Setting for \\if${cond}`}
+                        >
+                          {policyMode === 'source-with-overrides' && (
+                            <option value="follow">Follow source</option>
+                          )}
+                          {policyMode === 'manual' && val === undefined && (
+                            <option value="follow">(Select value...)</option>
+                          )}
+                          <option value="true">Force true</option>
+                          <option value="false">Force false</option>
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
         </div>
 
         <div className="ProjectSetupFooter">

@@ -3,7 +3,55 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
-const EDGE_PATH = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+function findBrowser() {
+  for (const envVar of ['BROWSER_PATH', 'CHROME_PATH', 'EDGE_PATH']) {
+    if (process.env[envVar] && fs.existsSync(process.env[envVar])) {
+      return process.env[envVar];
+    }
+  }
+
+  const platform = process.platform;
+  let candidates = [];
+
+  if (platform === 'win32') {
+    candidates = [
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+      process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Microsoft\\Edge\\Application\\msedge.exe') : '',
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google\\Chrome\\Application\\chrome.exe') : '',
+    ];
+  } else if (platform === 'darwin') {
+    candidates = [
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      process.env.HOME ? path.join(process.env.HOME, 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome') : '',
+      process.env.HOME ? path.join(process.env.HOME, 'Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge') : '',
+    ];
+  } else {
+    candidates = [
+      '/usr/bin/microsoft-edge',
+      '/usr/bin/microsoft-edge-stable',
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+    ];
+  }
+
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+const BROWSER_PATH = findBrowser();
 const BUILD_DIR = path.resolve(__dirname, '..', 'build');
 const SCREENSHOTS_DIR = path.resolve(__dirname, '..', 'screenshots');
 const PORT = 4055;
@@ -48,16 +96,26 @@ const server = http.createServer((req, res) => {
 });
 
 async function run() {
+  if (!BROWSER_PATH) {
+    console.error('No compatible Chromium-based browser (Edge, Chrome, Chromium) found.');
+    console.error('Please install Google Chrome or Microsoft Edge, or set BROWSER_PATH / CHROME_PATH environment variable.');
+    process.exit(1);
+  }
+
   server.listen(PORT, async () => {
     console.log(`Static server running on http://localhost:${PORT}`);
+    console.log(`Using browser binary: ${BROWSER_PATH}`);
 
-    const edgeProcess = execFile(EDGE_PATH, [
+    const browserProcess = execFile(BROWSER_PATH, [
       '--headless',
       '--disable-gpu',
       '--hide-scrollbars',
       `--remote-debugging-port=${CDP_PORT}`,
       'about:blank',
     ]);
+    browserProcess.on('error', (err) => {
+      console.error('Browser process error:', err.message);
+    });
 
     let wsUrl = null;
     for (let i = 0; i < 30; i++) {
@@ -73,7 +131,7 @@ async function run() {
 
     if (!wsUrl) {
       console.error('Failed to get WebSocket debugger URL');
-      edgeProcess.kill();
+      browserProcess.kill();
       server.close();
       process.exit(1);
     }
@@ -162,7 +220,7 @@ async function run() {
     } finally {
       ws.close();
       try {
-        edgeProcess.kill();
+        browserProcess.kill();
       } catch (e) {}
       server.close();
       process.exit(0);
