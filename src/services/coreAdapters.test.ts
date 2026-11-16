@@ -1,9 +1,6 @@
 import {
-  DiagnosticCode,
-  DiagnosticSeverity,
   PrepTexError,
   PrepTexErrorCode,
-  PrepTexSyntaxError,
   ProjectOperationError,
 } from '@preptex/core';
 import type {
@@ -20,17 +17,27 @@ import {
   inspectProjectEnvironmentsAdapter,
   lookupProjectSourceAdapter,
   planTransformationAdapter,
+  realizeProjectConditionsAdapter,
   resolveProjectViewAdapter,
   runAnalysisAdapter,
   selectProjectNodeAdapter,
   sourceOffsetAtAdapter,
+  tokenizeFileAdapter,
   toProcessingError,
   updateProjectSnapshotAdapter,
   walkConfiguredNodesAdapter,
 } from './core';
 
-describe('Milestone 1: Core Service Adapters (@preptex/core@0.3.0)', () => {
-  describe('Source Snapshots & Updates', () => {
+describe('Core Service Adapters (@preptex/core@0.4.0)', () => {
+  describe('Stage 0: Lossless Tokenizer, Snapshots & Updates', () => {
+    it('tokenizes source losslessly without environment or condition state (V-TOK-1)', () => {
+      const source = '\\iftrue\r\n\\begin{verbatim}\n\\fi\n\\end{verbatim}\n\\fi % comment\n$x$';
+      const tokens = tokenizeFileAdapter(source);
+      expect(tokens.map((t) => t.value).join('')).toBe(source);
+      expect(tokens.some((t) => t.kind === 'command' && t.name === 'begin')).toBe(true);
+      expect(tokens.some((t) => t.kind === 'command' && t.name === 'fi')).toBe(true);
+    });
+
     it('creates an immutable snapshot with lossless text and UTF-16 line endings', () => {
       const crlfSource = 'Line 1\r\nLine 2\r\n';
       const files: readonly SourceFile[] = [
@@ -93,7 +100,60 @@ describe('Milestone 1: Core Service Adapters (@preptex/core@0.3.0)', () => {
     });
   });
 
-  describe('Configured View Resolution', () => {
+  describe('Pipeline B: Standalone Condition Realization', () => {
+    it('realizes conditions even when braces or environments are unbalanced (V-COND-1)', () => {
+      const snapshot = createProjectSnapshotAdapter([
+        {
+          path: 'main.tex',
+          version: 1,
+          source: '\\newif\\ifcam\\camtrue\n\\ifcam\n{ \\begin{unclosed}\nKeep me\n\\else\nDrop me\n\\fi',
+        },
+      ]);
+
+      const realized = realizeProjectConditionsAdapter(snapshot, {
+        entryPath: 'main.tex',
+        conditions: { mode: 'source' },
+      });
+
+      expect(realized.status).toBe('ready');
+      expect(realized.editPlan).not.toBeNull();
+      const updated = applyProjectEditsAdapter(snapshot, realized.editPlan!);
+      expect(updated.files[0]?.source).toBe('{ \\begin{unclosed}\nKeep me\n');
+    });
+
+    it('realizes straddling environments and composes with mode: none AST parsing (V-COND-2, V-PIPE-1)', () => {
+      const snapshot = createProjectSnapshotAdapter([
+        {
+          path: 'main.tex',
+          version: 1,
+          source: '\\iflong\n\\begin{figure*}\n\\else\n\\begin{figure}\n\\fi\nBody\n\\iflong\n\\end{figure*}\n\\else\n\\end{figure}\n\\fi',
+        },
+      ]);
+
+      const realized = realizeProjectConditionsAdapter(snapshot, {
+        entryPath: 'main.tex',
+        conditions: { mode: 'manual', values: { long: false } },
+      });
+      expect(realized.status).toBe('ready');
+      expect(realized.editPlan).not.toBeNull();
+
+      const cleanSnapshot = applyProjectEditsAdapter(snapshot, realized.editPlan!);
+      expect(cleanSnapshot.files[0]?.source).toBe('\\begin{figure}\nBody\n\\end{figure}');
+
+      const view = resolveProjectViewAdapter(cleanSnapshot, {
+        entryPath: 'main.tex',
+        conditions: { mode: 'none' },
+      });
+      expect(view.status).toBe('ready');
+      if (view.status !== 'ready') throw new Error('Expected ready view');
+      const envNode = walkConfiguredNodesAdapter(view.root).find((n) => n.kind === 'environment');
+      expect(envNode).toBeDefined();
+      if (envNode?.kind !== 'environment') throw new Error('Expected environment node');
+      expect(envNode.name).toBe('figure');
+    });
+  });
+
+  describe('Pipeline A: Configured View Resolution', () => {
     it('resolves a ready view with entry and active inputs', () => {
       const files: readonly SourceFile[] = [
         { path: 'main.tex', version: 1, source: 'Hello \\input{part}' },
@@ -114,14 +174,12 @@ describe('Milestone 1: Core Service Adapters (@preptex/core@0.3.0)', () => {
       ];
       const snapshot = createProjectSnapshotAdapter(files);
 
-      // Follow source: test is set to true
       const viewFollow = resolveProjectViewAdapter(snapshot, {
         entryPath: 'main.tex',
         conditions: { mode: 'source' },
       });
       expect(viewFollow.status).toBe('ready');
 
-      // Override: force false
       const viewForceFalse = resolveProjectViewAdapter(snapshot, {
         entryPath: 'main.tex',
         conditions: {
@@ -130,6 +188,20 @@ describe('Milestone 1: Core Service Adapters (@preptex/core@0.3.0)', () => {
         },
       });
       expect(viewForceFalse.status).toBe('ready');
+    });
+
+    it('blocks with unrealized-condition when conditions.mode is none and conditionals exist (V-AST-1)', () => {
+      const snapshot = createProjectSnapshotAdapter([
+        { path: 'main.tex', version: 1, source: '\\section{Intro}\n\\ifdraft\nDraft text\n\\fi' },
+      ]);
+      const view = resolveProjectViewAdapter(snapshot, {
+        entryPath: 'main.tex',
+        conditions: { mode: 'none' },
+      });
+      expect(view.status).toBe('blocked');
+      if (view.status !== 'blocked') throw new Error('Expected blocked view');
+      expect(view.reason.code).toBe('unrealized-condition');
+      expect(view.reason.location?.range.line).toBe(2);
     });
 
     it('identifies incomplete views for unresolved conditions', () => {
@@ -142,6 +214,8 @@ describe('Milestone 1: Core Service Adapters (@preptex/core@0.3.0)', () => {
         conditions: { mode: 'source' },
       });
       expect(view.status).toBe('incomplete');
+      if (view.status !== 'incomplete') throw new Error('Expected incomplete view');
+      expect(view.reason.code).toBe('unknown-condition');
     });
   });
 
@@ -174,7 +248,7 @@ describe('Milestone 1: Core Service Adapters (@preptex/core@0.3.0)', () => {
       const view = resolveProjectViewAdapter(snapshot, { entryPath: 'main.tex' });
       const index = createProjectSourceIndexAdapter(view);
       const offset = sourceOffsetAtAdapter(index, 'main.tex', 2, 0);
-      expect(offset).toBe(6); // 'Line1\n' is 6 characters
+      expect(offset).toBe(6);
     });
 
     it('looks up nodes by source offset', () => {
@@ -263,27 +337,12 @@ describe('Milestone 1: Core Service Adapters (@preptex/core@0.3.0)', () => {
       expect(normalized.message).toContain('View is incomplete');
     });
 
-    it('normalizes PrepTexSyntaxError preserving diagnostic details', () => {
-      const syntaxError = new PrepTexSyntaxError('Syntax error', {
-        code: DiagnosticCode.SyntaxError,
-        severity: DiagnosticSeverity.Error,
-        message: 'Unbalanced brace',
-        path: 'main.tex',
-        range: { line: 1, start: 0, end: 5 },
-      });
-      const normalized = toProcessingError(syntaxError);
-      expect(normalized.kind).toBe('syntax');
-      if (normalized.kind !== 'syntax') throw new Error('Expected syntax error');
-      expect(normalized.diagnostic.path).toBe('main.tex');
-      expect(normalized.diagnostic.range.line).toBe(1);
-    });
-
     it('normalizes PrepTexError preserving code', () => {
-      const coreError = new PrepTexError('Missing entry', PrepTexErrorCode.MissingEntry);
+      const coreError = new PrepTexError('Invalid argument', PrepTexErrorCode.InvalidArgument);
       const normalized = toProcessingError(coreError);
       expect(normalized.kind).toBe('core');
       if (normalized.kind !== 'core') throw new Error('Expected core error');
-      expect(normalized.code).toBe(PrepTexErrorCode.MissingEntry);
+      expect(normalized.code).toBe(PrepTexErrorCode.InvalidArgument);
     });
 
     it('normalizes unexpected errors', () => {

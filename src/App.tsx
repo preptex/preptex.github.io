@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { TransformedFile } from '@preptex/core';
 import type { FilesMap } from './types/files';
 import './App.css';
 
@@ -10,16 +9,21 @@ import { EditPreviewDialog } from './components/EditPreviewDialog';
 import { NodeActionBar } from './components/NodeActionBar';
 import { useFiles } from './model/useFiles';
 import { useControl } from './model/useControl';
-import { useCoreProcess } from './model/useCoreProcess';
 import { useProjectConfiguration } from './model/useProjectConfiguration';
 import { useProjectModel } from './model/useProjectModel';
 import { useOperations } from './model/useOperations';
-import { useArtifacts } from './model/useArtifacts';
 import { TreeLayoutBuilder } from './components/astview/treebuilder';
 import type { LayoutNode } from './types/LayoutNode';
 import type { ConfiguredNode, GeneratedArtifact } from '@preptex/core';
 import { selectProjectNodeAdapter, walkConfiguredNodesAdapter } from './services/core';
 import { downloadBlob, downloadZipArchive } from './services/zip';
+
+function normalizeOutputName(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const hasExt = /\.[^./\\]+$/.test(trimmed);
+  return hasExt ? trimmed : `${trimmed}.processed.tex`;
+}
 
 function App() {
   const [jumpToLine, setJumpToLine] = useState<number | undefined>(undefined);
@@ -38,11 +42,13 @@ function App() {
 
   const [selectedNode, setSelectedNode] = useState<ConfiguredNode | null>(null);
   const [isEditPreviewOpen, setIsEditPreviewOpen] = useState(false);
+  const [switchToConditionFree, setSwitchToConditionFree] = useState(true);
   const [selectedArtifact, setSelectedArtifact] = useState<GeneratedArtifact | null>(null);
 
   const {
     filesByName,
     fileNames,
+    fileVersions,
     selectedFile,
     selectFile,
     uploadError,
@@ -53,9 +59,8 @@ function App() {
   } = useFiles();
 
   const projectConfig = useProjectConfiguration(filesByName, { entryPath: selectedFile || null });
-  const projectModel = useProjectModel(filesByName, sourceRevision, projectConfig);
+  const projectModel = useProjectModel(filesByName, sourceRevision, projectConfig, fileVersions);
   const operations = useOperations(projectModel.snapshot, projectModel.view);
-  const { addArtifacts } = useArtifacts();
 
   // Open Project Setup once when files are first imported into an empty workspace
   useEffect(() => {
@@ -127,81 +132,25 @@ Reference to \\ref{sec:missing}.
 
   const effectiveEntry = projectConfig.entryPath || selectedFile;
 
-  const {
-    result: coreRun,
-    transform,
-    project,
-    canTransform,
-  } = useCoreProcess(effectiveEntry, filesByName, options);
-
   const rootNode: LayoutNode | null = useMemo(() => {
     if (structureMode === 'configured') {
       if (projectModel.view?.status === 'ready' && projectModel.view.root) {
         return new TreeLayoutBuilder().buildConfigured(projectModel.view.root);
       }
-      const astRoot = project?.files.find((file) => file.path === selectedFile)?.root;
-      if (astRoot) {
-        return new TreeLayoutBuilder().build(astRoot);
-      }
       return null;
     }
 
-    // Source mode: raw tokens from scanned file
     const scannedFile = projectModel.snapshot?.files.find((file) => file.path === selectedFile);
     if (scannedFile && scannedFile.tokens.length > 0) {
       return new TreeLayoutBuilder().buildSourceTokens(selectedFile, scannedFile.tokens);
     }
-
-    const astRoot = project?.files.find((file) => file.path === selectedFile)?.root;
-    if (astRoot) {
-      return new TreeLayoutBuilder().build(astRoot);
-    }
     return null;
-  }, [structureMode, projectModel.view, projectModel.snapshot, project, selectedFile]);
+  }, [structureMode, projectModel.view, projectModel.snapshot, selectedFile]);
 
   const onDownload = (name: string) => {
     const text = filesByName[name] ?? '';
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const normalizeOutputName = (raw: string): string => {
-    const trimmed = raw.trim();
-    if (!trimmed) return '';
-    const hasExt = /\.[^./\\]+$/.test(trimmed);
-    return hasExt ? trimmed : `${trimmed}.processed.tex`;
-  };
-
-  const writeOutputsToTree = (outputs: readonly TransformedFile[]) => {
-    const overrideName = normalizeOutputName(options.outputName);
-    let entryOutputName = '';
-    const entries = outputs.map(({ path: name, source }) => {
-      const isEntry = name === effectiveEntry;
-      const newname =
-        overrideName && isEntry ? overrideName : name.replace(/\.tex$/i, '') + '.processed.tex';
-      if (isEntry) entryOutputName = newname;
-      return [newname, source] as const;
-    });
-    const next: FilesMap = Object.fromEntries(entries);
-    upsertTextFiles(next);
-    if (entryOutputName) {
-      selectFile(entryOutputName);
-    }
-  };
-
-  const onTransform = () => {
-    const outputs = transform();
-    if (!outputs) {
-      setIsLogOpen(true);
-      return;
-    }
-    addArtifacts(outputs.map((out) => ({ path: out.path, source: out.source })));
-    writeOutputsToTree(outputs);
+    downloadBlob(blob, name);
   };
 
   const onSelectFile = (name: string) => {
@@ -217,9 +166,45 @@ Reference to \\ref{sec:missing}.
     removeFile(name);
   };
 
+  const realizePolicy =
+    projectConfig.conditionPolicy.mode === 'none'
+      ? ({ mode: 'source' } as const)
+      : projectConfig.conditionPolicy;
+
+  const realizeCapability = operations.checkConditionRealizationCapability({
+    ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
+    traversal: projectConfig.traversal,
+    conditions: realizePolicy,
+    inputs: 'preserve',
+    stripDeclarationsAndSetters: options.stripDeclarationsAndSetters,
+  });
+
+  const exportCapability = operations.checkTransformationCapability({
+    operation: 'export-project',
+    options: {
+      inputs: options.inputHandling,
+      suppressComments: options.suppressComments,
+      suppressCommentEnvironments: options.suppressCommentEnvironments,
+    },
+  });
+
+  const viewBlockedReason = projectModel.viewIssue
+    ? `${projectModel.viewIssue.code}: ${projectModel.viewIssue.message}`
+    : !projectConfig.entryPath
+    ? 'Select an entry file in Settings first.'
+    : undefined;
+
+  const activeDecisions =
+    !operations.isConditionRealizationStale && operations.conditionRealization
+      ? operations.conditionRealization.decisions
+      : projectModel.view?.decisions ?? [];
+
   const findingsCount = operations.result?.findings.length ?? 0;
-  const diagnosticsCount = coreRun.diagnostics.length;
-  const hasError = Boolean(projectModel.error || operations.error || coreRun.error);
+  const diagnosticsCount = projectModel.issues.length;
+  const hasBlockingIssue = projectModel.issues.some((issue) => issue.severity === 'error');
+  const hasError = Boolean(
+    projectModel.error || operations.error || operations.transformationError || hasBlockingIssue,
+  );
   const logButtonLabel = hasError
     ? 'Log (error)'
     : diagnosticsCount + findingsCount > 0
@@ -255,16 +240,32 @@ Reference to \\ref{sec:missing}.
         options={options}
         onChange={setOptions}
         entryFile={effectiveEntry}
-        availableIfConditions={
-          projectModel.detectedConditions.length > 0
-            ? projectModel.detectedConditions
-            : coreRun.declaredConditions
-        }
-        onTransform={() => {
-          onTransform();
-          setIsOperationsOpen(false);
+        canRealizeConditions={Boolean(projectModel.snapshot) && realizeCapability.eligible}
+        realizeConditionsReason={realizeCapability.reasons[0]?.message}
+        conditionDecisions={activeDecisions}
+        onRealizeConditions={(mode, inputs) => {
+          const realized = operations.realizeConditions(
+            {
+              ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
+              traversal: projectConfig.traversal,
+              conditions: realizePolicy,
+              inputs,
+              stripDeclarationsAndSetters: options.stripDeclarationsAndSetters,
+            },
+            mode,
+          );
+          if (!realized) return;
+          if (realized.status !== 'ready') {
+            setIsOperationsOpen(false);
+            setIsLogOpen(true);
+            return;
+          }
+          if (mode === 'preview-edits' && realized.editPlan) {
+            setSwitchToConditionFree(true);
+            setIsOperationsOpen(false);
+            setIsEditPreviewOpen(true);
+          }
         }}
-        canTransform={canTransform}
         onRunReferences={() => {
           operations.runReferences();
           setIsOperationsOpen(false);
@@ -280,38 +281,46 @@ Reference to \\ref{sec:missing}.
         canRunCommandUsage={operations.checkCommandUsageCapability().eligible}
         commandUsageReason={operations.checkCommandUsageCapability().reasons[0]?.message}
         isAnalyzing={operations.running}
-        onPreviewCommentSuppression={(target, suppressCommentEnvironments) => {
-          operations.planTransformation({
+        canRunViewTransformations={projectModel.view?.status === 'ready'}
+        viewTransformationReason={viewBlockedReason}
+        onPreviewCommentSuppression={(suppressCommentEnvironments) => {
+          const res = operations.planTransformation({
             operation: 'suppress-comments',
             options: {
-              target,
+              target: 'selected',
               suppressCommentEnvironments,
             },
           });
-          setIsOperationsOpen(false);
-          setIsEditPreviewOpen(true);
+          if (res?.editPlan) {
+            setIsOperationsOpen(false);
+            setIsEditPreviewOpen(true);
+          }
         }}
         onPreviewRemoveEnvironments={(names, target) => {
-          operations.planTransformation({
+          const res = operations.planTransformation({
             operation: 'remove-environments',
             options: {
               target,
               names,
             },
           });
-          setIsOperationsOpen(false);
-          setIsEditPreviewOpen(true);
+          if (target === 'selected' && res?.editPlan) {
+            setIsOperationsOpen(false);
+            setIsEditPreviewOpen(true);
+          }
         }}
-        onExportProject={(conditions, inputs) => {
+        onExportProject={() => {
           operations.planTransformation({
             operation: 'export-project',
             options: {
-              conditions,
-              inputs,
+              inputs: options.inputHandling,
               suppressComments: options.suppressComments,
+              suppressCommentEnvironments: options.suppressCommentEnvironments,
             },
           });
         }}
+        canExportProject={exportCapability.eligible}
+        exportReason={exportCapability.reasons[0]?.message || viewBlockedReason}
         artifacts={operations.artifacts}
         onDownloadZip={() => {
           if (operations.artifacts.length > 0) {
@@ -322,8 +331,10 @@ Reference to \\ref{sec:missing}.
           }
         }}
         onDownloadArtifact={(art) => {
+          const overrideName =
+            operations.artifacts.length === 1 ? normalizeOutputName(options.outputName) : '';
           const blob = new Blob([art.source], { type: 'text/plain;charset=utf-8' });
-          downloadBlob(blob, art.path);
+          downloadBlob(blob, overrideName || art.path);
         }}
         onSelectArtifact={(art) => {
           setSelectedArtifact(art);
@@ -337,15 +348,22 @@ Reference to \\ref{sec:missing}.
         editPlan={operations.pendingEditPlan}
         isStale={operations.isEditPlanStale}
         error={operations.transformationError}
+        switchToConditionFree={switchToConditionFree}
+        onToggleSwitchToConditionFree={setSwitchToConditionFree}
         onDiscard={() => {
           operations.discardPendingEdits();
           setIsEditPreviewOpen(false);
         }}
         onApply={() => {
-          operations.applyPendingEdits((updatedFiles) => {
+          const isConditionRealization =
+            operations.pendingEditPlan?.provenance.request.operation === 'realize-conditions';
+          operations.applyPendingEdits((updatedFiles: FilesMap) => {
             upsertTextFiles(updatedFiles);
             setSelectedNode(null);
             setIsEditPreviewOpen(false);
+            if (isConditionRealization && switchToConditionFree) {
+              projectConfig.setConditionPolicy({ mode: 'none' });
+            }
           });
         }}
       />
@@ -365,8 +383,8 @@ Reference to \\ref{sec:missing}.
       <LogDialog
         isOpen={isLogOpen}
         onClose={() => setIsLogOpen(false)}
-        diagnostics={coreRun.diagnostics}
-        error={projectModel.error || operations.error || coreRun.error}
+        diagnostics={projectModel.issues}
+        error={projectModel.error || operations.error || operations.transformationError}
         findings={operations.result?.findings}
         isStale={operations.isStale}
         onSelectLocation={(location) => {
@@ -494,6 +512,7 @@ Reference to \\ref{sec:missing}.
           structureMode={structureMode}
           onChangeStructureMode={setStructureMode}
           isConfiguredAvailable={projectModel.view?.status === 'ready'}
+          viewIssue={projectModel.viewIssue}
           onSelectNode={(node) => {
             if (node.path && node.path !== selectedFile && filesByName[node.path]) {
               setSelectedArtifact(null);

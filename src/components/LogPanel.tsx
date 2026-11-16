@@ -1,20 +1,16 @@
-import type { AnalysisFinding, AnalysisLocation, WarningDiagnostic } from '@preptex/core';
+import type { AnalysisFinding, ProjectIssue, SourceLocation } from '@preptex/core';
 import type { ProcessingError } from '../services/core';
 
 export interface LogPanelProps {
-  readonly diagnostics: readonly WarningDiagnostic[];
+  readonly diagnostics: readonly ProjectIssue[];
   readonly error: ProcessingError | null;
   readonly findings?: readonly AnalysisFinding[];
   readonly isStale?: boolean;
-  readonly onSelectLocation?: (location: AnalysisLocation) => void;
+  readonly onSelectLocation?: (location: SourceLocation) => void;
 }
 
 function formatError(error: ProcessingError): string {
   switch (error.kind) {
-    case 'syntax': {
-      const { path, range, message } = error.diagnostic;
-      return path + ':' + range.line + ' [' + error.code + '] ' + message;
-    }
     case 'operation': {
       const loc = error.failure.locations[0];
       const locPrefix = loc ? loc.path + ':' + loc.range.line + ' ' : '';
@@ -51,6 +47,38 @@ export default function LogPanel({
             {formatError(error)}
           </div>
         ) : null}
+        {diagnostics.map((issue, index) => {
+          const isError = issue.severity === 'error';
+          const entryClass = isError ? 'LogPanelEntry--error' : 'LogPanelEntry--warning';
+          const loc = issue.location;
+          return (
+            <div
+              key={`diag-${index}`}
+              role={isError ? 'alert' : undefined}
+              className={`LogPanelEntry ${entryClass}`}
+            >
+              [{issue.severity.toUpperCase()}] [{issue.code}] {issue.message}
+              {loc ? (
+                <>
+                  {' '}
+                  {onSelectLocation ? (
+                    <button
+                      type="button"
+                      className="LogPanelLink"
+                      onClick={() => onSelectLocation(loc)}
+                    >
+                      ({loc.path}:{loc.range.line})
+                    </button>
+                  ) : (
+                    <span>
+                      ({loc.path}:{loc.range.line})
+                    </span>
+                  )}
+                </>
+              ) : null}
+            </div>
+          );
+        })}
         {findings.map((finding, index) => {
           const entryClass =
             finding.severity === 'warning'
@@ -75,11 +103,6 @@ export default function LogPanel({
             </div>
           );
         })}
-        {diagnostics.map((diagnostic, index) => (
-          <div className="LogPanelEntry" key={`diag-${index}`}>
-            {diagnostic.path}:{diagnostic.range.line} [{diagnostic.severity}/{diagnostic.code}] {diagnostic.message}
-          </div>
-        ))}
       </div>
     </section>
   );

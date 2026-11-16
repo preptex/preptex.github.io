@@ -8,10 +8,10 @@ describe('EditPreviewDialog', () => {
     kind: 'edits',
     provenance: {
       snapshotId: 'snap-1',
-      viewId: null,
+      viewId: 'view-1',
       request: {
         operation: 'suppress-comments',
-        options: { target: 'source' },
+        options: { target: 'selected' },
       },
       operationVersion: 1,
     },
@@ -50,6 +50,43 @@ describe('EditPreviewDialog', () => {
     expect(screen.getByText(/% A comment/i)).toBeInTheDocument();
     expect(screen.getByText(/\\begin\{center\}/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /apply edits to sources/i })).toBeEnabled();
+  });
+
+  it('shows condition-free policy switch option for realize-conditions plans', () => {
+    const realizePlan: ProjectEditPlan = {
+      kind: 'edits',
+      provenance: {
+        snapshotId: 'snap-1',
+        viewId: null,
+        request: {
+          operation: 'realize-conditions',
+          options: { conditions: { mode: 'source' } },
+        },
+        operationVersion: 1,
+      },
+      edits: mockPlan.edits,
+    };
+
+    const onToggle = jest.fn();
+    render(
+      <EditPreviewDialog
+        isOpen={true}
+        onClose={jest.fn()}
+        editPlan={realizePlan}
+        isStale={false}
+        onApply={jest.fn()}
+        onDiscard={jest.fn()}
+        error={null}
+        switchToConditionFree={true}
+        onToggleSwitchToConditionFree={onToggle}
+      />,
+    );
+
+    expect(screen.getByText(/Condition Realization/i)).toBeInTheDocument();
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).toBeChecked();
+    fireEvent.click(checkbox);
+    expect(onToggle).toHaveBeenCalledWith(false);
   });
 
   it('disables apply button and shows warning when edit plan is stale', () => {

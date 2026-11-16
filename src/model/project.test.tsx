@@ -1,59 +1,78 @@
 import { StrictMode } from 'react';
 import { act, renderHook } from '@testing-library/react';
-import { InputHandlingMode, PrepTexErrorCode } from '@preptex/core';
 import { useFiles } from './useFiles';
-import { useCoreProcess } from './useCoreProcess';
-import { useControl } from './useControl';
+import { useProjectConfiguration } from './useProjectConfiguration';
+import { useProjectModel } from './useProjectModel';
+import { useOperations } from './useOperations';
 
 function useTestProject() {
   const files = useFiles({ 'main.tex': 'Hello' });
-  const control = useControl();
-  const core = useCoreProcess(files.selectedFile, files.filesByName, control.options);
-  return { files, control, core };
+  const config = useProjectConfiguration(files.filesByName, { entryPath: 'main.tex' });
+  const model = useProjectModel(files.filesByName, files.sourceRevision, config, files.fileVersions);
+  const operations = useOperations(model.snapshot, model.view);
+  return { files, config, model, operations };
 }
 
 test('initial files and consecutive mutations stay in sync under StrictMode', () => {
   const { result } = renderHook(useTestProject, { wrapper: StrictMode });
-  expect(result.current.core.canTransform).toBe(true);
+  expect(result.current.model.isReady).toBe(true);
   act(() => {
     result.current.files.upsertTextFiles({ 'a.tex': 'A' });
     result.current.files.upsertTextFiles({ 'b.tex': 'B' });
   });
-  expect(result.current.core.project?.files.map((f) => f.path)).toEqual(['a.tex', 'b.tex', 'main.tex']);
+  expect(result.current.model.snapshot?.files.map((f) => f.path)).toEqual([
+    'a.tex',
+    'b.tex',
+    'main.tex',
+  ]);
   expect(result.current.files.selectedFile).toBe('main.tex');
   act(() => result.current.files.removeFile('main.tex'));
   expect(result.current.files.selectedFile).toBe('a.tex');
-  expect(result.current.core.project?.files.map((f) => f.path)).toEqual(['a.tex', 'b.tex']);
+  expect(result.current.model.snapshot?.files.map((f) => f.path)).toEqual(['a.tex', 'b.tex']);
 });
 
-test('a failed parse disables transforms and recovery parses every current buffer', () => {
+test('structural error blocks view and recovers when source is fixed', () => {
   const { result } = renderHook(useTestProject);
   act(() => result.current.files.upsertTextFiles({ 'main.tex': '\\begin{document}' }));
-  expect(result.current.core.project).toBeNull();
-  expect(result.current.core.canTransform).toBe(false);
-  expect(result.current.core.result.error?.kind).toBe('syntax');
-  expect(result.current.core.transform()).toBeNull();
+  expect(result.current.model.snapshot).not.toBeNull();
+  expect(result.current.model.isReady).toBe(false);
+  expect(result.current.model.viewIssue?.code).toBe('structural-error');
+
   act(() => result.current.files.upsertTextFiles({ 'main.tex': 'Recovered', 'other.tex': 'Other' }));
-  expect(result.current.core.canTransform).toBe(true);
+  expect(result.current.model.isReady).toBe(true);
+
+  let exportedSources: readonly { path: string; source: string }[] = [];
   act(() => {
-    expect(result.current.core.transform()).toEqual([{ path: 'main.tex', source: 'Recovered' }]);
+    const res = result.current.operations.planTransformation({
+      operation: 'export-project',
+      options: { inputs: 'preserve' },
+    });
+    exportedSources = res?.artifacts.map((a) => ({ path: a.path, source: a.source })) ?? [];
   });
-  expect(result.current.core.result.error).toBeNull();
+  expect(exportedSources).toEqual([{ path: 'main.tex', source: 'Recovered' }]);
 });
 
-test('a missing input error clears after uploading the dependency', () => {
+test('missing input issue clears after uploading the dependency', () => {
   const { result } = renderHook(useTestProject);
   act(() => {
     result.current.files.upsertTextFiles({ 'main.tex': '\\input{part}' });
-    result.current.control.setOptions((options) => ({ ...options, inputHandling: InputHandlingMode.Flatten }));
   });
-  act(() => { expect(result.current.core.transform()).toBeNull(); });
-  expect(result.current.core.result.error).toMatchObject({ code: PrepTexErrorCode.MissingInput });
+  expect(result.current.model.isReady).toBe(false);
+  expect(result.current.model.viewIssue?.code).toBe('missing-input');
+
   act(() => result.current.files.upsertTextFiles({ 'part.tex': 'Part' }));
-  expect(result.current.core.result.error).toBeNull();
+  expect(result.current.model.isReady).toBe(true);
+  expect(result.current.model.viewIssue).toBeNull();
+
+  let exportedSources: readonly { path: string; source: string }[] = [];
   act(() => {
-    expect(result.current.core.transform()).toEqual([{ path: 'main.tex', source: 'Part' }]);
+    const res = result.current.operations.planTransformation({
+      operation: 'export-project',
+      options: { inputs: 'inline' },
+    });
+    exportedSources = res?.artifacts.map((a) => ({ path: a.path, source: a.source })) ?? [];
   });
+  expect(exportedSources).toEqual([{ path: 'main.tex', source: 'Part' }]);
 });
 
 test('uploads complete file batches and keeps a selection made while reading', async () => {
@@ -66,5 +85,9 @@ test('uploads complete file batches and keeps a selection made while reading', a
   });
   expect(result.current.files.selectedFile).toBe('selected.tex');
   expect(result.current.files.filesByName['new.tex']).toBe('Uploaded');
-  expect(result.current.core.project?.files.map((f) => f.path)).toEqual(['main.tex', 'new.tex', 'selected.tex']);
+  expect(result.current.model.snapshot?.files.map((f) => f.path)).toEqual([
+    'main.tex',
+    'new.tex',
+    'selected.tex',
+  ]);
 });

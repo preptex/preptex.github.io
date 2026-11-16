@@ -312,6 +312,92 @@ select.ControlInput {
   text-align: center;
 }
 
+.ControlPipelineBadge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 9999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  white-space: nowrap;
+}
+
+.ControlDecisions {
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 6px;
+  background: var(--color-surface-soft, #f8fafc);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ControlDecisionsTitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted, #64748b);
+  text-transform: uppercase;
+}
+
+.ControlDecisionsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 110px;
+  overflow-y: auto;
+}
+
+.ControlDecisionItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.ControlDecisionItem code {
+  font-family: var(--font-mono, monospace);
+  color: var(--color-text, #1e293b);
+}
+
+.ControlDecisionOutcome {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 9999px;
+}
+
+.ControlDecisionOutcome--true {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.ControlDecisionOutcome--false {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.ControlDecisionOutcome--unknown {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.ControlDecisionOutcome--not-reached {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.ControlDecisionMore {
+  font-size: 11px;
+  color: var(--color-text-muted, #64748b);
+}
+
 /* Artifacts Section */
 .ControlCard--artifacts {
   grid-column: 1 / -1;

@@ -1,6 +1,9 @@
 import { useCallback, useState } from 'react';
+import { PrepTexErrorCode } from '@preptex/core';
 import type {
   AnalysisResult,
+  ConditionRealizationRequest,
+  ConditionRealizationResult,
   GeneratedArtifact,
   OperationCapability,
   ProjectEditPlan,
@@ -13,6 +16,7 @@ import {
   applyProjectEditsAdapter,
   checkOperationCapabilityAdapter,
   planTransformationAdapter,
+  realizeProjectConditionsAdapter,
   runAnalysisAdapter,
   toProcessingError,
   validateProjectEditPlanAdapter,
@@ -26,6 +30,9 @@ export interface OperationState {
   readonly error: ProcessingError | null;
   readonly executedForSnapshotId: string | null;
   readonly executedForViewId: string | null;
+
+  readonly conditionRealization: ConditionRealizationResult | null;
+  readonly conditionRealizationSnapshotId: string | null;
 
   readonly transformationRunning: boolean;
   readonly transformationResult: TransformationResult | null;
@@ -46,6 +53,9 @@ export function useOperations(
     error: null,
     executedForSnapshotId: null,
     executedForViewId: null,
+
+    conditionRealization: null,
+    conditionRealizationSnapshotId: null,
 
     transformationRunning: false,
     transformationResult: null,
@@ -143,25 +153,136 @@ export function useOperations(
     }));
   }, []);
 
+  const checkConditionRealizationCapability = useCallback(
+    (request: ConditionRealizationRequest): OperationCapability => {
+      if (!snapshot) {
+        return {
+          eligible: false,
+          reasons: [{
+            code: 'wrong-model',
+            message: 'Upload at least one source file to realize conditions.',
+          }],
+        };
+      }
+      return checkOperationCapabilityAdapter(snapshot, {
+        operation: 'realize-conditions',
+        options: request,
+      });
+    },
+    [snapshot],
+  );
+
+  const realizeConditions = useCallback(
+    (
+      request: ConditionRealizationRequest,
+      mode: 'preview-edits' | 'export-artifacts',
+    ): ConditionRealizationResult | null => {
+      if (!snapshot) return null;
+      setState((prev) => ({ ...prev, transformationRunning: true, transformationError: null }));
+      try {
+        const realized = realizeProjectConditionsAdapter(snapshot, request);
+        if (realized.status !== 'ready') {
+          const failureMsg = realized.reason
+            ? `${realized.reason.code}: ${realized.reason.message}`
+            : 'Condition realization could not complete.';
+          setState((prev) => ({
+            ...prev,
+            transformationRunning: false,
+            conditionRealization: realized,
+            conditionRealizationSnapshotId: snapshot.id,
+            pendingEditPlan: null,
+            transformationError: {
+              kind: 'core',
+              code: PrepTexErrorCode.OperationUnavailable,
+              message: failureMsg,
+            },
+          }));
+          return realized;
+        }
+
+        if (mode === 'preview-edits') {
+          if (!realized.editPlan) {
+            setState((prev) => ({
+              ...prev,
+              transformationRunning: false,
+              conditionRealization: realized,
+              conditionRealizationSnapshotId: snapshot.id,
+              pendingEditPlan: null,
+              artifacts: realized.artifacts,
+              transformationError: {
+                kind: 'core',
+                code: PrepTexErrorCode.EditConflict,
+                message: 'In-place edits are unavailable for this configuration; use artifact export instead.',
+              },
+            }));
+            return realized;
+          }
+          setState((prev) => ({
+            ...prev,
+            transformationRunning: false,
+            conditionRealization: realized,
+            conditionRealizationSnapshotId: snapshot.id,
+            pendingEditPlan: realized.editPlan,
+            artifacts: realized.artifacts,
+            editPlanSnapshotId: snapshot.id,
+            editPlanViewId: null,
+            transformationError: null,
+          }));
+          return realized;
+        }
+
+        setState((prev) => ({
+          ...prev,
+          transformationRunning: false,
+          conditionRealization: realized,
+          conditionRealizationSnapshotId: snapshot.id,
+          artifacts: realized.artifacts,
+          transformationError: null,
+        }));
+        return realized;
+      } catch (err: unknown) {
+        setState((prev) => ({
+          ...prev,
+          transformationRunning: false,
+          pendingEditPlan: null,
+          transformationError: toProcessingError(err),
+        }));
+        return null;
+      }
+    },
+    [snapshot],
+  );
+
   const checkTransformationCapability = useCallback((request: TransformationRequest): OperationCapability => {
-    const target = 'target' in request.options ? request.options.target : undefined;
-    const model = (target === 'source' || !view) ? snapshot : view;
-    if (!model) {
+    if (request.operation === 'realize-conditions') {
+      if (!snapshot) {
+        return {
+          eligible: false,
+          reasons: [{
+            code: 'wrong-model',
+            message: 'No project snapshot is available.',
+          }],
+        };
+      }
+      return checkOperationCapabilityAdapter(snapshot, request);
+    }
+
+    if (!view) {
       return {
         eligible: false,
         reasons: [{
           code: 'view-not-ready',
-          message: 'No project snapshot or view is available.',
+          message: 'A ready configured view is required for structural transformations.',
         }],
       };
     }
-    return checkOperationCapabilityAdapter(model, request);
+    return checkOperationCapabilityAdapter(view, request);
   }, [snapshot, view]);
 
-  const planTransformation = useCallback((request: TransformationRequest) => {
-    const target = 'target' in request.options ? request.options.target : undefined;
-    const model = (target === 'source' || !view) ? snapshot : view;
-    if (!model) return;
+  const planTransformation = useCallback((request: TransformationRequest): TransformationResult | null => {
+    const isSnapshotOp = request.operation === 'realize-conditions';
+    const model = isSnapshotOp ? snapshot : view;
+    if (!model) return null;
 
     setState((prev) => ({ ...prev, transformationRunning: true, transformationError: null }));
     try {
@@ -173,9 +294,10 @@ export function useOperations(
         pendingEditPlan: result.editPlan,
         artifacts: result.artifacts,
         editPlanSnapshotId: snapshot?.id ?? null,
-        editPlanViewId: view?.id ?? null,
+        editPlanViewId: isSnapshotOp ? null : (view?.id ?? null),
         transformationError: null,
       }));
+      return result;
     } catch (err: unknown) {
       setState((prev) => ({
         ...prev,
@@ -184,20 +306,24 @@ export function useOperations(
         pendingEditPlan: null,
         transformationError: toProcessingError(err),
       }));
+      return null;
     }
   }, [snapshot, view]);
 
   const applyPendingEdits = useCallback((onApplied: (updatedFiles: FilesMap) => void) => {
     if (!state.pendingEditPlan || !snapshot) return;
 
-    const validation = validateProjectEditPlanAdapter(snapshot, state.pendingEditPlan, view ?? undefined);
+    const requiresView = state.pendingEditPlan.provenance.viewId !== null;
+    const planView = requiresView ? (view ?? undefined) : undefined;
+
+    const validation = validateProjectEditPlanAdapter(snapshot, state.pendingEditPlan, planView);
     if (!validation.eligible) {
       setState((prev) => ({ ...prev, transformationError: validation.error }));
       return;
     }
 
     try {
-      const updatedSnapshot = applyProjectEditsAdapter(snapshot, state.pendingEditPlan, view ?? undefined);
+      const updatedSnapshot = applyProjectEditsAdapter(snapshot, state.pendingEditPlan, planView);
       const updatedFiles: FilesMap = Object.fromEntries(
         updatedSnapshot.files.map((file) => [file.path, file.source]),
       );
@@ -238,7 +364,6 @@ export function useOperations(
     }));
   }, []);
 
-  // Stale detection: if current snapshot or view ID does not match the executed IDs
   const isStale = Boolean(
     state.result &&
       ((snapshot && state.executedForSnapshotId !== snapshot.id) ||
@@ -248,18 +373,27 @@ export function useOperations(
   const isEditPlanStale = Boolean(
     state.pendingEditPlan &&
       ((snapshot && state.editPlanSnapshotId !== snapshot.id) ||
-        (view && state.editPlanViewId !== view.id)),
+        (state.editPlanViewId !== null && view && state.editPlanViewId !== view.id)),
+  );
+
+  const isConditionRealizationStale = Boolean(
+    state.conditionRealization &&
+      snapshot &&
+      state.conditionRealizationSnapshotId !== snapshot.id,
   );
 
   return {
     ...state,
     isStale,
     isEditPlanStale,
+    isConditionRealizationStale,
     runReferences,
     runCommandUsage,
     clearResults,
     checkReferencesCapability,
     checkCommandUsageCapability,
+    checkConditionRealizationCapability,
+    realizeConditions,
     checkTransformationCapability,
     planTransformation,
     applyPendingEdits,

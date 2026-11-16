@@ -95,6 +95,26 @@
   gap: 0.5rem;
 }
 
+.edit-preview-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background-color: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.edit-preview-option input {
+  width: 15px;
+  height: 15px;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
 .summary-badge {
   display: inline-flex;
   align-items: center;
