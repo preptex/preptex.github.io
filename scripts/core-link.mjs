@@ -206,6 +206,60 @@ function validateLockfile(lock, sourceLabel) {
   return issues;
 }
 
+function findDroppedOptionalPeerEntries(prevLockRaw, nextLockRaw) {
+  if (!prevLockRaw || !nextLockRaw) return [];
+  let prevLock;
+  let nextLock;
+  try {
+    prevLock = JSON.parse(prevLockRaw);
+    nextLock = JSON.parse(nextLockRaw);
+  } catch {
+    return [];
+  }
+  const prevPkgs = prevLock?.packages ?? {};
+  const nextPkgs = nextLock?.packages ?? {};
+  const dropped = [];
+
+  for (const [pkgPath, meta] of Object.entries(prevPkgs)) {
+    if (!meta || typeof meta !== 'object') continue;
+    if (meta.optional !== true || meta.peer !== true) continue;
+    if (Object.prototype.hasOwnProperty.call(nextPkgs, pkgPath)) continue;
+
+    const marker = '/node_modules/';
+    const idx = pkgPath.lastIndexOf(marker);
+    if (idx <= 0) continue;
+    const parentPath = pkgPath.slice(0, idx);
+    const prevParent = prevPkgs[parentPath];
+    const nextParent = nextPkgs[parentPath];
+    if (prevParent && nextParent && prevParent.version === nextParent.version) {
+      dropped.push({ pkgPath, meta });
+    }
+  }
+  return dropped;
+}
+
+function preserveOptionalPeerEntries(prevLockRaw, lockPath) {
+  if (!prevLockRaw || !existsSync(lockPath)) return 0;
+  const nextLockRaw = readFileSync(lockPath, 'utf8');
+  const dropped = findDroppedOptionalPeerEntries(prevLockRaw, nextLockRaw);
+  if (dropped.length === 0) return 0;
+
+  const nextLock = parseJson(nextLockRaw, 'package-lock.json');
+  const mergedPackages = { ...(nextLock.packages ?? {}) };
+  for (const { pkgPath, meta } of dropped) {
+    mergedPackages[pkgPath] = meta;
+  }
+  const sortedPackages = {};
+  for (const key of Object.keys(mergedPackages).sort()) {
+    sortedPackages[key] = mergedPackages[key];
+  }
+  writeJsonFile(lockPath, {
+    ...nextLock,
+    packages: sortedPackages,
+  });
+  return dropped.length;
+}
+
 function checkSources({ manifestRaw, lockRaw, manifestLabel, lockLabel }) {
   const issues = [];
   if (manifestRaw !== null) {
@@ -218,11 +272,19 @@ function checkSources({ manifestRaw, lockRaw, manifestLabel, lockLabel }) {
 }
 
 function failWithIssues(issues, contextHint) {
-  console.error(`\n[preptex] Refusing ${contextHint}: ${TARGET_PACKAGE} is locally linked.\n`);
+  const onlyLockDrift = issues.every((issue) => issue.includes('optional peer'));
+  const headline = onlyLockDrift
+    ? `Refusing ${contextHint}: package-lock.json is out of sync with Node 22 npm ci.`
+    : `Refusing ${contextHint}: ${TARGET_PACKAGE} link or lockfile validation failed.`;
+  console.error(`\n[preptex] ${headline}\n`);
   for (const issue of issues) {
     console.error(`  - ${issue}`);
   }
-  console.error('\nRun `npm run core:unlink` before committing/pushing/merging manifest or lockfile changes.\n');
+  console.error(
+    onlyLockDrift
+      ? '\nRun `npx -y npm@10.9.2 install --package-lock-only` before committing manifest/lockfile changes.\n'
+      : '\nRun `npm run core:unlink` before committing/pushing/merging manifest or lockfile changes.\n',
+  );
   process.exit(1);
 }
 
@@ -245,6 +307,18 @@ function handleCheck(flags) {
       manifestLabel: 'staged package.json',
       lockLabel: 'staged package-lock.json',
     });
+    if (checkLock) {
+      const dropped = findDroppedOptionalPeerEntries(
+        gitShow('HEAD:package-lock.json'),
+        gitShow(':package-lock.json'),
+      );
+      if (dropped.length > 0) {
+        issues.push(
+          `staged package-lock.json dropped ${dropped.map((d) => d.pkgPath).join(', ')} ` +
+            `(npm > 10 stripped optional peer entries required by Node 22 npm ci; run "npx -y npm@10.9.2 install --package-lock-only").`,
+        );
+      }
+    }
     if (issues.length > 0) {
       failWithIssues(issues, 'commit');
     }
@@ -416,10 +490,18 @@ function handleUnlink(flags) {
   // Remove symlinked/local package first so npm does not treat matching semver as up-to-date.
   rmSync(installedModule, { recursive: true, force: true });
 
+  const lockPath = path.join(websiteRoot, 'package-lock.json');
+  const prevLockRaw = gitShow('HEAD:package-lock.json') || (existsSync(lockPath) ? readFileSync(lockPath, 'utf8') : null);
+
   console.log(`Restoring ${TARGET_PACKAGE}@${targetVersion} from npm...`);
   runNpm(['install', `${TARGET_PACKAGE}@${targetVersion}`, '--save-exact'], websiteRoot);
 
-  const lockPath = path.join(websiteRoot, 'package-lock.json');
+  const restoredCount = preserveOptionalPeerEntries(prevLockRaw, lockPath);
+  if (restoredCount > 0) {
+    console.log(
+      `Preserved ${restoredCount} unchanged optional peer lockfile ${restoredCount === 1 ? 'entry' : 'entries'} for Node 22 npm ci compatibility.`,
+    );
+  }
   const postIssues = checkSources({
     manifestRaw: readFileSync(manifestPath, 'utf8'),
     lockRaw: existsSync(lockPath) ? readFileSync(lockPath, 'utf8') : null,
