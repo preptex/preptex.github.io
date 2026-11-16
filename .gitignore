@@ -25,3 +25,6 @@ yarn-error.log*
 
 # test snapshots
 /screenshots
+
+# local @preptex/core linking state
+/.local-core-state.json
