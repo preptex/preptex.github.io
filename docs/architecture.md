@@ -1,6 +1,6 @@
 # Website architecture
 
-This document describes the website using `@preptex/core@0.6.0`. Update it when
+This document describes the website using `@preptex/core@0.6.1`. Update it when
 component responsibilities, state ownership, or the integration contract change.
 
 ## Scope and dependencies
@@ -14,7 +14,7 @@ ZIP/file downloads. There is no backend, persistence service, TeX compiler, PDF 
 network file service. Files live in memory; only AST filter preferences persist in browser
 `localStorage`.
 
-Runtime dependencies are React 19, CodeMirror 6, and PrepTeX Core 0.6.0.
+Runtime dependencies are React 19, CodeMirror 6, and PrepTeX Core 0.6.1.
 The build system is Create React App 5 with TypeScript 4.9 and Webpack 5.
 TypeScript uses ES2020, strict checking, checked indexed access, and Node module
 resolution compatible with that compiler. Explicit `any` is an ESLint error.
