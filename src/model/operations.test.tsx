@@ -209,4 +209,61 @@ describe('Independent Analysis & Two-Pipeline Operations', () => {
     expect(result.current.operations.pendingEditPlan).toBeNull();
     expect(result.current.files.filesByName['main.tex']).toContain('% A comment');
   });
+
+  it('supports ignore condition policy with subfolder inputs and whole-document target=source transformations', () => {
+    function useIgnoreModeTest() {
+      const files = useFiles({
+        'main.tex':
+          '\\newcommand{\\oldcmd}[1]{[#1]}\n\\ifunknown\n% Branch A comment\n\\oldcmd{one}\n\\else\n% Branch B comment\n\\oldcmd{two}\n\\fi\n\\input{intro/history.tex}\n',
+        'intro/history.tex': '\\begin{draftnote}Internal\\end{draftnote}History text',
+      });
+      const config = useProjectConfiguration(files.filesByName, {
+        entryPath: 'main.tex',
+        conditionPolicy: { mode: 'ignore' },
+      });
+      const model = useProjectModel(files.filesByName, files.sourceRevision, config, files.fileVersions);
+      const operations = useOperations(model.snapshot, model.view);
+      return { files, config, model, operations };
+    }
+
+    const { result } = renderHook(useIgnoreModeTest);
+
+    expect(result.current.model.hasConditionals).toBe(true);
+    expect(result.current.model.isReady).toBe(true);
+    expect(result.current.model.catalog).not.toBeNull();
+
+    act(() => {
+      result.current.operations.planTransformation({
+        operation: 'suppress-comments',
+        options: { target: 'source' },
+      });
+    });
+
+    expect(result.current.operations.pendingEditPlan).not.toBeNull();
+    act(() => {
+      result.current.operations.applyPendingEdits((updatedFiles) => {
+        result.current.files.upsertTextFiles(updatedFiles, { recordHistory: true, label: 'Suppress comments' });
+      });
+    });
+
+    expect(result.current.files.filesByName['main.tex']).not.toContain('% Branch A comment');
+    expect(result.current.files.filesByName['main.tex']).not.toContain('% Branch B comment');
+    expect(result.current.files.filesByName['main.tex']).toContain('\\oldcmd{one}');
+    expect(result.current.files.filesByName['main.tex']).toContain('\\oldcmd{two}');
+
+    act(() => {
+      result.current.operations.planTransformation({
+        operation: 'remove-environments',
+        options: { names: ['draftnote'], target: 'source' },
+      });
+    });
+
+    act(() => {
+      result.current.operations.applyPendingEdits((updatedFiles) => {
+        result.current.files.upsertTextFiles(updatedFiles, { recordHistory: true, label: 'Remove draftnote' });
+      });
+    });
+
+    expect(result.current.files.filesByName['intro/history.tex']).toBe('History text');
+  });
 });

@@ -9,11 +9,13 @@
   --color-surface: #ffffff;
   --color-surface-soft: #fbfcff;
   --color-surface-muted: #f5f7ff;
+  --color-surface-subtle: #f1f5f9;
   --color-border: rgba(64, 82, 137, 0.18);
   --color-border-strong: rgba(76, 93, 146, 0.26);
   --color-text: #0e1833;
   --color-text-muted: #566385;
   --color-primary: #3f7fc4;
+  --color-primary-hover: #2f68a5;
   --color-primary-strong: #2f68a5;
   --color-primary-start: #5b9cda;
   --color-primary-soft: #eef6ff;

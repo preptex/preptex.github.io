@@ -31,6 +31,7 @@ export interface ProjectModelResult {
   readonly snapshot: CoreProjectSnapshot | null;
   readonly view: ProjectView | null;
   readonly isReady: boolean;
+  readonly hasConditionals: boolean;
   readonly viewIssue: ProjectIssue | null;
   readonly issues: readonly ProjectIssue[];
   readonly detectedConditions: readonly string[];
@@ -234,8 +235,15 @@ export function useProjectModel(
     }
   }, [view, config.coarseTreeOptions]);
 
+  const hasConditionals = useMemo(() => {
+    if (detectedConditions.length > 0) return true;
+    return Boolean(inventory?.facts.some((f) => f.kind === 'condition-test'));
+  }, [detectedConditions, inventory]);
+
   const catalog = useMemo<ProjectCatalog | null>(() => {
-    const model = view?.status === 'ready' ? view : snapshot;
+    const useSnapshotCatalog =
+      config.conditionPolicy.mode === 'ignore' || view?.status !== 'ready';
+    const model = useSnapshotCatalog ? snapshot : view;
     if (!model) return null;
     try {
       return inspectProjectCatalogAdapter(
@@ -247,17 +255,20 @@ export function useProjectModel(
     } catch {
       return null;
     }
-  }, [view, snapshot, config.customCommands]);
+  }, [view, snapshot, config.customCommands, config.conditionPolicy.mode]);
 
   const metadata = useMemo<ProjectMetadata | null>(() => {
-    const model = view?.status === 'ready' ? view : snapshot;
+    const model =
+      config.conditionPolicy.mode === 'ignore' || view?.status !== 'ready'
+        ? snapshot
+        : view;
     if (!model) return null;
     try {
       return extractProjectMetadataAdapter(model);
     } catch {
       return null;
     }
-  }, [view, snapshot]);
+  }, [view, snapshot, config.conditionPolicy.mode]);
 
   const error = viewError || snapshotError;
 
@@ -265,6 +276,7 @@ export function useProjectModel(
     snapshot,
     view,
     isReady,
+    hasConditionals,
     viewIssue,
     issues,
     detectedConditions,

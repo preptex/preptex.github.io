@@ -2,26 +2,105 @@ import { useCallback, useMemo, useReducer } from 'react';
 import type { ProjectFilePath } from '@preptex/core';
 import type { FilesMap } from '../types/files';
 
+export interface FileHistoryEntry {
+  readonly filesByName: FilesMap;
+  readonly selectedFile: ProjectFilePath;
+  readonly label: string;
+}
+
 export interface FilesState {
   readonly filesByName: FilesMap;
   readonly fileVersions: Readonly<Record<ProjectFilePath, number>>;
   readonly sourceRevision: number;
   readonly selectedFile: ProjectFilePath;
   readonly uploadError: string | null;
+  readonly past: readonly FileHistoryEntry[];
+  readonly future: readonly FileHistoryEntry[];
 }
+
+export interface UpsertTextOptions {
+  readonly recordHistory?: boolean;
+  readonly label?: string;
+}
+
+const MAX_HISTORY_ENTRIES = 50;
 
 type FilesAction =
   | { readonly type: 'select'; readonly path: ProjectFilePath }
-  | { readonly type: 'upsert'; readonly files: FilesMap }
+  | {
+      readonly type: 'upsert';
+      readonly files: FilesMap;
+      readonly recordHistory?: boolean;
+      readonly label?: string;
+    }
   | { readonly type: 'remove'; readonly path: ProjectFilePath }
+  | { readonly type: 'undo' }
+  | { readonly type: 'redo' }
   | { readonly type: 'reset' }
   | { readonly type: 'upload-error'; readonly message: string };
+
+export function normalizeUploadedBatch(incoming: FilesMap, existing: FilesMap): FilesMap {
+  const cleanedEntries: [string, string][] = [];
+  for (const [rawPath, source] of Object.entries(incoming)) {
+    const normalized = rawPath.replace(/\\/g, '/').replace(/^(?:\.\/|\/)+/, '');
+    if (normalized) cleanedEntries.push([normalized, source]);
+  }
+  if (cleanedEntries.length === 0) return {};
+
+  const existingKeys = Object.keys(existing);
+  if (existingKeys.length === 0 && cleanedEntries.length > 1) {
+    const firstSegments = cleanedEntries.map(([p]) => {
+      const idx = p.indexOf('/');
+      return idx > 0 ? p.slice(0, idx) : '';
+    });
+    const sharedRoot = firstSegments[0];
+    if (sharedRoot && firstSegments.every((seg) => seg === sharedRoot)) {
+      const prefixLen = sharedRoot.length + 1;
+      return Object.fromEntries(
+        cleanedEntries.map(([p, src]) => [p.slice(prefixLen), src]),
+      );
+    }
+  }
+
+  return Object.fromEntries(cleanedEntries);
+}
+
+function restoreSnapshot(
+  state: FilesState,
+  target: FileHistoryEntry,
+  nextPast: readonly FileHistoryEntry[],
+  nextFuture: readonly FileHistoryEntry[],
+): FilesState {
+  const nextFileVersions: Record<ProjectFilePath, number> = {};
+  for (const [path, src] of Object.entries(target.filesByName)) {
+    const prevVersion = state.fileVersions[path] ?? 0;
+    const changed = state.filesByName[path] !== src;
+    nextFileVersions[path] = changed ? prevVersion + 1 : Math.max(1, prevVersion);
+  }
+  const hasSelected = Object.prototype.hasOwnProperty.call(target.filesByName, target.selectedFile);
+  const selectedFile = hasSelected
+    ? target.selectedFile
+    : Object.prototype.hasOwnProperty.call(target.filesByName, state.selectedFile)
+    ? state.selectedFile
+    : Object.keys(target.filesByName)[0] ?? '';
+
+  return {
+    filesByName: { ...target.filesByName },
+    fileVersions: nextFileVersions,
+    sourceRevision: state.sourceRevision + 1,
+    selectedFile,
+    uploadError: null,
+    past: nextPast,
+    future: nextFuture,
+  };
+}
 
 function filesReducer(state: FilesState, action: FilesAction): FilesState {
   switch (action.type) {
     case 'select':
       return Object.prototype.hasOwnProperty.call(state.filesByName, action.path)
-        ? { ...state, selectedFile: action.path } : state;
+        ? { ...state, selectedFile: action.path }
+        : state;
     case 'upsert': {
       const changed = Object.entries(action.files).filter(
         ([path, src]) => state.filesByName[path] !== src,
@@ -34,12 +113,26 @@ function filesReducer(state: FilesState, action: FilesAction): FilesState {
       for (const [path] of changed) {
         nextFileVersions[path] = (nextFileVersions[path] ?? 0) + 1;
       }
+      const shouldRecord = Boolean(action.recordHistory && changed.length > 0);
+      const past = shouldRecord
+        ? [
+            ...state.past.slice(-(MAX_HISTORY_ENTRIES - 1)),
+            {
+              filesByName: state.filesByName,
+              selectedFile: state.selectedFile,
+              label: action.label ?? 'Edit files',
+            },
+          ]
+        : state.past;
+      const future = shouldRecord ? [] : state.future;
       return {
         filesByName,
         fileVersions: nextFileVersions,
         sourceRevision: state.sourceRevision + 1,
         selectedFile: state.selectedFile || Object.keys(filesByName)[0] || '',
         uploadError: null,
+        past,
+        future,
       };
     }
     case 'remove': {
@@ -56,10 +149,46 @@ function filesReducer(state: FilesState, action: FilesAction): FilesState {
         filesByName,
         fileVersions: nextFileVersions,
         sourceRevision: state.sourceRevision + 1,
-        selectedFile: state.selectedFile === action.path
-          ? Object.keys(filesByName)[0] ?? '' : state.selectedFile,
+        selectedFile:
+          state.selectedFile === action.path
+            ? Object.keys(filesByName)[0] ?? ''
+            : state.selectedFile,
         uploadError: null,
+        past: state.past,
+        future: state.future,
       };
+    }
+    case 'undo': {
+      if (state.past.length === 0) return state;
+      const prevEntry = state.past[state.past.length - 1];
+      if (!prevEntry) return state;
+      const redoEntry: FileHistoryEntry = {
+        filesByName: state.filesByName,
+        selectedFile: state.selectedFile,
+        label: prevEntry.label,
+      };
+      return restoreSnapshot(
+        state,
+        prevEntry,
+        state.past.slice(0, -1),
+        [redoEntry, ...state.future],
+      );
+    }
+    case 'redo': {
+      if (state.future.length === 0) return state;
+      const nextEntry = state.future[0];
+      if (!nextEntry) return state;
+      const undoEntry: FileHistoryEntry = {
+        filesByName: state.filesByName,
+        selectedFile: state.selectedFile,
+        label: nextEntry.label,
+      };
+      return restoreSnapshot(
+        state,
+        nextEntry,
+        [...state.past.slice(-(MAX_HISTORY_ENTRIES - 1)), undoEntry],
+        state.future.slice(1),
+      );
     }
     case 'reset':
       return {
@@ -68,13 +197,15 @@ function filesReducer(state: FilesState, action: FilesAction): FilesState {
         sourceRevision: state.sourceRevision + 1,
         selectedFile: '',
         uploadError: null,
+        past: [],
+        future: [],
       };
     case 'upload-error':
       return { ...state, uploadError: action.message };
   }
 }
 
-function readTextFile(file: File): Promise<readonly [ProjectFilePath, string]> {
+function readTextFile(file: File, overridePath?: string): Promise<readonly [ProjectFilePath, string]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(reader.error ?? new Error('Could not read ' + file.name + '.'));
@@ -84,7 +215,7 @@ function readTextFile(file: File): Promise<readonly [ProjectFilePath, string]> {
         reject(new Error('Could not read ' + file.name + ' as text.'));
         return;
       }
-      const path = (file.webkitRelativePath || file.name).replace(/\\/g, '/');
+      const path = (overridePath || file.webkitRelativePath || file.name).replace(/\\/g, '/');
       resolve([path, reader.result]);
     };
     reader.readAsText(file);
@@ -103,6 +234,8 @@ export function useFiles(initial: FilesMap = {}) {
       sourceRevision: 1,
       selectedFile: Object.keys(files)[0] ?? '',
       uploadError: null,
+      past: [],
+      future: [],
     };
   });
 
@@ -110,26 +243,66 @@ export function useFiles(initial: FilesMap = {}) {
   const selectFile = useCallback((path: ProjectFilePath) => dispatch({ type: 'select', path }), []);
   const removeFile = useCallback((path: ProjectFilePath) => dispatch({ type: 'remove', path }), []);
   const resetFiles = useCallback(() => dispatch({ type: 'reset' }), []);
-  const upsertTextFiles = useCallback((files: FilesMap) => {
-    dispatch({ type: 'upsert', files });
+  const goBack = useCallback(() => dispatch({ type: 'undo' }), []);
+  const goForward = useCallback(() => dispatch({ type: 'redo' }), []);
+
+  const upsertTextFiles = useCallback((files: FilesMap, options?: UpsertTextOptions) => {
+    dispatch({
+      type: 'upsert',
+      files,
+      recordHistory: options?.recordHistory,
+      label: options?.label,
+    });
   }, []);
 
-  const upsertFiles = useCallback(async (fileList: FileList | readonly File[]): Promise<void> => {
-    try {
-      const entries = await Promise.all(Array.from(fileList).map(readTextFile));
-      dispatch({ type: 'upsert', files: Object.fromEntries(entries) });
-    } catch (error: unknown) {
-      dispatch({ type: 'upload-error', message: error instanceof Error ? error.message : String(error) });
-    }
-  }, []);
+  const upsertFiles = useCallback(
+    async (fileList: FileList | readonly File[]): Promise<void> => {
+      try {
+        const entries = await Promise.all(Array.from(fileList).map((f) => readTextFile(f)));
+        const normalized = normalizeUploadedBatch(Object.fromEntries(entries), state.filesByName);
+        dispatch({ type: 'upsert', files: normalized });
+      } catch (error: unknown) {
+        dispatch({
+          type: 'upload-error',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [state.filesByName],
+  );
+
+  const upsertFileItems = useCallback(
+    async (items: ReadonlyArray<{ readonly file: File; readonly relativePath: string }>): Promise<void> => {
+      try {
+        const entries = await Promise.all(
+          items.map(({ file, relativePath }) => readTextFile(file, relativePath)),
+        );
+        const normalized = normalizeUploadedBatch(Object.fromEntries(entries), state.filesByName);
+        dispatch({ type: 'upsert', files: normalized });
+      } catch (error: unknown) {
+        dispatch({
+          type: 'upload-error',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [state.filesByName],
+  );
 
   return {
     ...state,
     fileNames,
+    canGoBack: state.past.length > 0,
+    canGoForward: state.future.length > 0,
+    backLabel: state.past[state.past.length - 1]?.label ?? null,
+    forwardLabel: state.future[0]?.label ?? null,
     selectFile,
     upsertFiles,
+    upsertFileItems,
     upsertTextFiles,
     removeFile,
     resetFiles,
+    goBack,
+    goForward,
   } as const;
 }

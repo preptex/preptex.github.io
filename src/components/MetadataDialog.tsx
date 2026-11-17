@@ -13,6 +13,7 @@ export interface MetadataDialogProps {
   readonly metadata: ProjectMetadata | null;
   readonly onEditMetadata: (action: Extract<SymbolRefactorAction, { readonly kind: 'edit-metadata' }>) => void;
   readonly onSelectLocation: (location: AnalysisLocation) => void;
+  readonly variant?: 'dialog' | 'view';
 }
 
 type EditableMetadataKey = 'title' | 'author' | 'date' | 'abstract';
@@ -148,8 +149,10 @@ export function MetadataDialog({
   metadata,
   onEditMetadata,
   onSelectLocation,
+  variant = 'dialog',
 }: MetadataDialogProps) {
   useEffect(() => {
+    if (variant !== 'dialog') return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
         onClose();
@@ -157,26 +160,26 @@ export function MetadataDialog({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, variant]);
 
-  if (!isOpen) return null;
+  if (variant === 'dialog' && !isOpen) return null;
 
-  return (
-    <div className="MetadataDialogOverlay" onClick={onClose} role="presentation">
-      <div
-        className="MetadataDialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="metadata-dialog-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="MetadataDialogHeader">
-          <div className="MetadataTitleGroup">
-            <h2 id="metadata-dialog-title">Document Metadata &amp; Statistics</h2>
-            <span className="MetadataSubtitle">
-              Inspect and directly edit title, authors, date, and abstract, plus preamble packages and counts.
-            </span>
-          </div>
+  const dialogInner = (
+    <div
+      className={variant === 'view' ? 'MetadataViewCard' : 'MetadataDialog'}
+      role={variant === 'dialog' ? 'dialog' : undefined}
+      aria-modal={variant === 'dialog' ? 'true' : undefined}
+      aria-labelledby="metadata-dialog-title"
+      onClick={variant === 'dialog' ? (e) => e.stopPropagation() : undefined}
+    >
+      <div className="MetadataDialogHeader">
+        <div className="MetadataTitleGroup">
+          <h2 id="metadata-dialog-title">Document Metadata &amp; Statistics</h2>
+          <span className="MetadataSubtitle">
+            Inspect and directly edit title, authors, date, and abstract, plus preamble packages and counts.
+          </span>
+        </div>
+        {variant === 'dialog' ? (
           <button
             type="button"
             className="MetadataDialogClose"
@@ -185,7 +188,8 @@ export function MetadataDialog({
           >
             &times;
           </button>
-        </div>
+        ) : null}
+      </div>
 
         <div className="MetadataDialogBody">
           {!metadata ? (
@@ -341,12 +345,27 @@ export function MetadataDialog({
           )}
         </div>
 
-        <div className="MetadataDialogFooter">
-          <button type="button" className="MetadataBtn" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
+        {variant === 'dialog' ? (
+          <div className="MetadataDialogFooter">
+            <button type="button" className="MetadataBtn" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        ) : null}
+    </div>
+  );
+
+  if (variant === 'view') {
+    return (
+      <section className="WorkspaceViewPane MetadataViewPane" aria-label="Metadata">
+        {dialogInner}
+      </section>
+    );
+  }
+
+  return (
+    <div className="MetadataDialogOverlay" onClick={onClose} role="presentation">
+      {dialogInner}
     </div>
   );
 }

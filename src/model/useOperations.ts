@@ -269,7 +269,39 @@ export function useOperations(
       return checkOperationCapabilityAdapter(snapshot, request);
     }
 
+    const isSourceTarget =
+      (request.operation === 'suppress-comments' && request.options?.target === 'source') ||
+      (request.operation === 'remove-environments' && request.options.target === 'source') ||
+      (request.operation === 'refactor-symbols' && request.options.target === 'source');
+
+    if (isSourceTarget) {
+      if (!snapshot) {
+        return {
+          eligible: false,
+          reasons: [{
+            code: 'wrong-model',
+            message: 'No project snapshot is available.',
+          }],
+        };
+      }
+      return checkOperationCapabilityAdapter(snapshot, request);
+    }
+
     if (request.operation === 'refactor-symbols' || request.operation === 'compose-transformations') {
+      const model = view?.status === 'ready' ? view : snapshot;
+      if (!model) {
+        return {
+          eligible: false,
+          reasons: [{
+            code: 'wrong-model',
+            message: 'No project snapshot is available.',
+          }],
+        };
+      }
+      return checkOperationCapabilityAdapter(model, request);
+    }
+
+    if (request.operation === 'export-project') {
       const model = view?.status === 'ready' ? view : snapshot;
       if (!model) {
         return {
@@ -296,9 +328,15 @@ export function useOperations(
   }, [snapshot, view]);
 
   const planTransformation = useCallback((request: TransformationRequest): TransformationResult | null => {
-    const isSnapshotOp = request.operation === 'realize-conditions';
+    const isSnapshotOp =
+      request.operation === 'realize-conditions' ||
+      (request.operation === 'suppress-comments' && request.options?.target === 'source') ||
+      (request.operation === 'remove-environments' && request.options.target === 'source') ||
+      (request.operation === 'refactor-symbols' && request.options.target === 'source');
     const isFlexibleModel =
-      request.operation === 'refactor-symbols' || request.operation === 'compose-transformations';
+      request.operation === 'refactor-symbols' ||
+      request.operation === 'compose-transformations' ||
+      request.operation === 'export-project';
     const readyView = view?.status === 'ready' ? view : null;
     const effectiveRequest: TransformationRequest =
       request.operation === 'refactor-symbols' && !readyView && request.options.target !== 'artifact'
@@ -339,7 +377,18 @@ export function useOperations(
   const planCompositeTransformation = useCallback((
     options: CompositeTransformationRequest['options'],
   ): TransformationResult | null => {
-    const model = view?.status === 'ready' ? view : snapshot;
+    const requiresReadyView = options.steps.some((step) => {
+      if (step.operation === 'suppress-comments' || step.operation === 'remove-environments') {
+        return step.options?.target !== 'source';
+      }
+      if (step.operation === 'refactor-symbols') {
+        return step.options.target === 'selected' || step.options.target === 'artifact';
+      }
+      return false;
+    });
+    const model = requiresReadyView
+      ? (view?.status === 'ready' ? view : null)
+      : (snapshot ?? (view?.status === 'ready' ? view : null));
     if (!model) return null;
 
     setState((prev) => ({ ...prev, transformationRunning: true, transformationError: null }));
