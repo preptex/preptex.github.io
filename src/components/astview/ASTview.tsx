@@ -1,5 +1,5 @@
 import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { CoarseTreeOptions, ProjectIssue } from '@preptex/core';
+import type { CoarseTreeOptions, ConditionPolicy, ProjectIssue } from '@preptex/core';
 import { isLayoutNodeKind, LAYOUT_NODE_KINDS } from '../../types/LayoutNode';
 import type { LayoutNode, LayoutNodeKind } from '../../types/LayoutNode';
 import TreeNode from './TreeNode';
@@ -12,12 +12,19 @@ export interface ASTviewProps {
   selectedNodeKey?: string | null;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
+  isSidePanel?: boolean;
   structureMode?: AstStructureMode;
   onChangeStructureMode?: (mode: AstStructureMode) => void;
   isConfiguredAvailable?: boolean;
   viewIssue?: ProjectIssue | null;
   coarseOptions?: CoarseTreeOptions;
   onChangeCoarseOptions?: (next: CoarseTreeOptions) => void;
+  hasConditionals?: boolean;
+  conditionPolicy?: ConditionPolicy;
+  detectedConditions?: readonly string[];
+  onConfigureConditions?: (policy: ConditionPolicy) => void;
+  splitEnabled?: boolean;
+  onToggleSplit?: () => void;
 }
 
 const STORAGE_KEY = 'preptex.astview.options.v6';
@@ -175,14 +182,26 @@ export default function ASTview({
   selectedNodeKey = null,
   collapsed,
   onToggleCollapsed,
+  isSidePanel = true,
   structureMode = 'coarse',
   onChangeStructureMode,
   isConfiguredAvailable = true,
   viewIssue = null,
   coarseOptions = {},
   onChangeCoarseOptions,
+  hasConditionals = false,
+  conditionPolicy,
+  detectedConditions = [],
+  onConfigureConditions,
+  splitEnabled,
+  onToggleSplit,
 }: ASTviewProps) {
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [phase0Open, setPhase0Open] = useState(false);
+  const [inlineMode, setInlineMode] = useState<ConditionPolicy['mode']>(
+    conditionPolicy && conditionPolicy.mode !== 'ignore' ? conditionPolicy.mode : 'source',
+  );
+  const [inlineOverrides, setInlineOverrides] = useState<Record<string, boolean>>({});
   const [options, setOptions] = useState<AstViewOptions>(() => loadOptions());
   const [newCommand, setNewCommand] = useState('');
   const [newEnvironment, setNewEnvironment] = useState('');
@@ -530,17 +549,156 @@ export default function ASTview({
             </div>
           ) : null}
 
-          <button
-            type="button"
-            className="AstTreeToggle"
-            onClick={onToggleCollapsed}
-            aria-label={collapsed ? 'Expand AST view' : 'Collapse AST view'}
-            title={collapsed ? 'Expand' : 'Collapse'}
-          >
-            {collapsed ? '<' : '>'}
-          </button>
+          {!collapsed && !isSidePanel && onToggleSplit ? (
+            <button
+              type="button"
+              className={`AstTreeSplitBtn${splitEnabled ? ' AstTreeSplitBtn--active' : ''}`}
+              onClick={onToggleSplit}
+              title="Toggle side-by-side Code view"
+            >
+              <span aria-hidden="true">◫</span>
+              <span>Split</span>
+            </button>
+          ) : null}
+
+          {isSidePanel && onToggleCollapsed ? (
+            <button
+              type="button"
+              className="AstTreeToggle"
+              onClick={onToggleCollapsed}
+              aria-label={collapsed ? 'Expand AST view' : 'Collapse AST view'}
+              title={collapsed ? 'Expand' : 'Collapse'}
+            >
+              {collapsed ? '<' : '>'}
+            </button>
+          ) : null}
         </div>
       </div>
+
+      {!collapsed && hasConditionals && onConfigureConditions ? (
+        <div className="AstPhase0Region">
+          {!isConfiguredAvailable && structureMode !== 'source' ? (
+            <div className="AstPhase0Prompt" role="region" aria-label="Condition configuration required">
+              <div className="AstPhase0PromptHeader">
+                <strong>Condition paths needed for branch AST</strong>
+                {viewIssue ? <span className="AstPhase0Issue">{viewIssue.message}</span> : null}
+              </div>
+              <p className="AstPhase0Desc">
+                Cross-branch conditionals affect structural nesting here. Choose which branch to evaluate for AST inspection, or inspect Source mode.
+              </p>
+            </div>
+          ) : (
+            <div className="AstPhase0Banner">
+              <span>
+                {conditionPolicy?.mode === 'ignore'
+                  ? 'Viewing all conditional branches (ignore mode)'
+                  : `Condition mode: ${conditionPolicy?.mode ?? 'source'}`}
+              </span>
+              <button
+                type="button"
+                className="AstPhase0ToggleBtn"
+                onClick={() => setPhase0Open((v) => !v)}
+              >
+                {phase0Open ? 'Hide Phase 0' : 'Configure Conditions'}
+              </button>
+            </div>
+          )}
+
+          {(phase0Open || (!isConfiguredAvailable && structureMode !== 'source')) ? (
+            <div className="AstPhase0Card">
+              <div className="AstPhase0Row">
+                <label className="AstPhase0Field">
+                  <span>Condition policy</span>
+                  <select
+                    value={inlineMode}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (
+                        val === 'ignore' ||
+                        val === 'source' ||
+                        val === 'source-with-overrides' ||
+                        val === 'manual' ||
+                        val === 'none'
+                      ) {
+                        setInlineMode(val);
+                      }
+                    }}
+                  >
+                    <option value="ignore">Ignore conditionals (all branches)</option>
+                    <option value="source">Follow source declarations &amp; setters</option>
+                    <option value="source-with-overrides">Source with named overrides</option>
+                    <option value="manual">Force explicit boolean values</option>
+                    <option value="none">Condition-free (none)</option>
+                  </select>
+                </label>
+              </div>
+
+              {detectedConditions.length > 0 &&
+              (inlineMode === 'source-with-overrides' || inlineMode === 'manual') ? (
+                <div className="AstPhase0CondList">
+                  {detectedConditions.map((cond) => {
+                    const val = inlineOverrides[cond];
+                    const choice = val === true ? 'true' : val === false ? 'false' : 'follow';
+                    return (
+                      <label key={cond} className="AstPhase0CondItem">
+                        <code>\if{cond}</code>
+                        <select
+                          value={choice}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === 'follow') {
+                              const next = { ...inlineOverrides };
+                              delete next[cond];
+                              setInlineOverrides(next);
+                            } else {
+                              setInlineOverrides({ ...inlineOverrides, [cond]: v === 'true' });
+                            }
+                          }}
+                        >
+                          {inlineMode === 'source-with-overrides' ? (
+                            <option value="follow">Follow source</option>
+                          ) : null}
+                          {inlineMode === 'manual' && val === undefined ? (
+                            <option value="follow">(Select…)</option>
+                          ) : null}
+                          <option value="true">True</option>
+                          <option value="false">False</option>
+                        </select>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              <div className="AstPhase0Actions">
+                <button
+                  type="button"
+                  className="AstPhase0ApplyBtn"
+                  onClick={() => {
+                    if (inlineMode === 'ignore') {
+                      onConfigureConditions({ mode: 'ignore' });
+                    } else if (inlineMode === 'none') {
+                      onConfigureConditions({ mode: 'none' });
+                    } else if (inlineMode === 'manual') {
+                      onConfigureConditions({ mode: 'manual', values: inlineOverrides });
+                    } else if (inlineMode === 'source-with-overrides') {
+                      onConfigureConditions({
+                        mode: 'source-with-overrides',
+                        overrides: inlineOverrides,
+                      });
+                    } else {
+                      onConfigureConditions({ mode: 'source' });
+                    }
+                    setPhase0Open(false);
+                  }}
+                >
+                  Apply Condition Setup
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {collapsed ? null : (
         <div className="AstTreeList" role="tree">

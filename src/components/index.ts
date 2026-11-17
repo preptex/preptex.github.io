@@ -8,3 +8,5 @@ export { default as OperationsDialog } from './OperationsDialog';
 export { default as CatalogDialog } from './CatalogDialog';
 export { default as MetadataDialog } from './MetadataDialog';
 export { default as TreeNode } from './astview/TreeNode';
+export { default as WorkspaceHeader } from './WorkspaceHeader';
+export { default as WelcomeEmptyState } from './WelcomeEmptyState';

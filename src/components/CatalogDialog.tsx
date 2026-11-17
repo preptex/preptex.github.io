@@ -25,6 +25,7 @@ export interface CatalogDialogProps {
   readonly onRemoveCustomCommand: (name: string) => void;
   readonly onRefactorSymbol: (action: SymbolRefactorAction) => void;
   readonly onSelectLocation: (location: AnalysisLocation) => void;
+  readonly variant?: 'dialog' | 'view';
 }
 
 const TABS: readonly { readonly id: CatalogTab; readonly label: string }[] = [
@@ -261,6 +262,7 @@ export function CatalogDialog({
   onRemoveCustomCommand,
   onRefactorSymbol,
   onSelectLocation,
+  variant = 'dialog',
 }: CatalogDialogProps) {
   const [activeTab, setActiveTab] = useState<CatalogTab>('commands');
   const [filter, setFilter] = useState<CatalogFilter>('all');
@@ -269,6 +271,7 @@ export function CatalogDialog({
   const [editingDefId, setEditingDefId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (variant !== 'dialog') return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
         onClose();
@@ -276,7 +279,7 @@ export function CatalogDialog({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, variant]);
 
   const toggleExpanded = (key: string) => {
     setExpandedKeys((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -354,24 +357,24 @@ export function CatalogDialog({
     return base.filter((c) => c.key.toLowerCase().includes(normalizedQuery));
   }, [catalog, filter, normalizedQuery]);
 
-  if (!isOpen) return null;
+  if (variant === 'dialog' && !isOpen) return null;
 
-  return (
-    <div className="CatalogDialogOverlay" onClick={onClose} role="presentation">
-      <div
-        className="CatalogDialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="catalog-dialog-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="CatalogDialogHeader">
-          <div className="CatalogDialogTitleGroup">
-            <h2 id="catalog-dialog-title">Project Symbol &amp; Construct Catalog</h2>
-            <span className="CatalogDialogSubtitle">
-              Inspect introduced vs. used symbols, jump to occurrences, refactor globally, and assign argument counts to reparse.
-            </span>
-          </div>
+  const inner = (
+    <div
+      className={variant === 'view' ? 'CatalogViewCard' : 'CatalogDialog'}
+      role={variant === 'dialog' ? 'dialog' : undefined}
+      aria-modal={variant === 'dialog' ? 'true' : undefined}
+      aria-labelledby="catalog-dialog-title"
+      onClick={variant === 'dialog' ? (e) => e.stopPropagation() : undefined}
+    >
+      <div className="CatalogDialogHeader">
+        <div className="CatalogDialogTitleGroup">
+          <h2 id="catalog-dialog-title">Project Symbol &amp; Construct Catalog</h2>
+          <span className="CatalogDialogSubtitle">
+            Inspect introduced vs. used symbols across all branches, jump to occurrences, refactor globally, and assign argument counts.
+          </span>
+        </div>
+        {variant === 'dialog' ? (
           <button
             type="button"
             className="CatalogDialogClose"
@@ -380,7 +383,8 @@ export function CatalogDialog({
           >
             &times;
           </button>
-        </div>
+        ) : null}
+      </div>
 
         <div className="CatalogDialogToolbar">
           <div className="CatalogTabs" role="tablist" aria-label="Symbol categories">
@@ -906,16 +910,31 @@ export function CatalogDialog({
           )}
         </div>
 
-        <div className="CatalogDialogFooter">
-          <button
-            type="button"
-            className="CatalogBtn"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
-      </div>
+        {variant === 'dialog' ? (
+          <div className="CatalogDialogFooter">
+            <button
+              type="button"
+              className="CatalogBtn"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          </div>
+        ) : null}
+    </div>
+  );
+
+  if (variant === 'view') {
+    return (
+      <section className="WorkspaceViewPane CatalogViewPane" aria-label="Catalog">
+        {inner}
+      </section>
+    );
+  }
+
+  return (
+    <div className="CatalogDialogOverlay" onClick={onClose} role="presentation">
+      {inner}
     </div>
   );
 }

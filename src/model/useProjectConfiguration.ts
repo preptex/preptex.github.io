@@ -29,7 +29,22 @@ export function recommendEntry(files: FilesMap): ProjectFilePath | null {
   const paths = Object.keys(files);
   if (paths.length === 0) return null;
   if (paths.includes('main.tex')) return 'main.tex';
-  const texFiles = paths.filter((p) => p.endsWith('.tex'));
+
+  const depth = (p: string) => p.split('/').length;
+  const subMains = paths
+    .filter((p) => p.endsWith('/main.tex'))
+    .sort((a, b) => depth(a) - depth(b) || a.localeCompare(b));
+  if (subMains[0]) return subMains[0];
+
+  const texFiles = paths.filter((p) => p.toLowerCase().endsWith('.tex'));
+  const docClassFiles = texFiles
+    .filter((p) => /\\documentclass(?:\[|\{)/.test(files[p] ?? ''))
+    .sort((a, b) => depth(a) - depth(b) || a.localeCompare(b));
+  if (docClassFiles[0]) return docClassFiles[0];
+
+  const rootTex = texFiles.filter((p) => !p.includes('/')).sort((a, b) => a.localeCompare(b));
+  if (rootTex[0]) return rootTex[0];
+
   return texFiles[0] ?? paths[0] ?? null;
 }
 

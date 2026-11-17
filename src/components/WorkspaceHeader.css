@@ -1,0 +1,376 @@
+.WorkspaceHeader {
+  height: 48px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  position: relative;
+  z-index: 40;
+  flex-shrink: 0;
+}
+
+.WorkspaceHeaderGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.WorkspaceHeaderRight {
+  margin-left: auto;
+}
+
+.HeaderBrand {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+  padding: 0 6px 0 4px;
+  white-space: nowrap;
+}
+
+.HeaderIconButton,
+.HeaderMenuButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.HeaderIconButton:hover:not(:disabled),
+.HeaderMenuButton:hover:not(:disabled) {
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border-strong);
+}
+
+.HeaderIconButton:disabled,
+.HeaderMenuButton:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.HeaderIconButton.is-active,
+.HeaderMenuButton.is-open {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.35);
+  color: var(--color-primary);
+}
+
+.HeaderCaret {
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.HeaderActiveViewBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--color-primary);
+}
+
+.HeaderMenuAnchor {
+  position: relative;
+}
+
+.HeaderDropdown,
+.ViewsDrawer {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+  z-index: 60;
+}
+
+.HeaderDropdown {
+  width: 260px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.HeaderMenuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.HeaderMenuItem:hover:not(:disabled) {
+  background: var(--color-surface-subtle);
+}
+
+.HeaderMenuItem:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.HeaderMenuItem--danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--color-danger);
+}
+
+.HeaderMenuItemMain {
+  font-weight: 500;
+}
+
+.HeaderMenuItemHint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.HeaderMenuDivider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 6px;
+}
+
+.ViewsDrawer {
+  width: 340px;
+  padding: 8px;
+}
+
+.ViewsDrawerHeader {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  padding: 4px 8px 6px;
+}
+
+.ViewsDrawerList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ViewsDrawerItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ViewsDrawerItem:hover {
+  background: var(--color-surface-subtle);
+}
+
+.ViewsDrawerItem.is-active {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+
+.ViewsDrawerIcon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.ViewsDrawerItem.is-active .ViewsDrawerIcon {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+}
+
+.ViewsDrawerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ViewsDrawerTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ViewsDrawerTitle {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ViewsDrawerDesc {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.ViewsBadge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+}
+
+.ViewsBadge--warning {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+
+.ViewsBadge--accent {
+  background: rgba(37, 99, 235, 0.14);
+  color: var(--color-primary);
+}
+
+.WorkspaceQuickTabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.QuickViewTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.QuickViewTab:hover {
+  color: var(--color-text);
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.QuickViewTab.is-active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.HeaderHistoryGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.HeaderStatusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  max-width: 240px;
+  white-space: nowrap;
+}
+
+.HeaderStatusPill:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.HeaderStatusLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.HeaderStatusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #94a3b8;
+  flex-shrink: 0;
+}
+
+.HeaderStatusPill--ready .HeaderStatusDot {
+  background: #16a34a;
+}
+
+.HeaderStatusPill--warning {
+  border-color: rgba(217, 119, 6, 0.35);
+  background: rgba(254, 243, 199, 0.6);
+  color: #92400e;
+}
+
+.HeaderStatusPill--warning .HeaderStatusDot {
+  background: #d97706;
+}
+
+@media (max-width: 1080px) {
+  .WorkspaceQuickTabs {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .HeaderButtonText,
+  .HeaderStatusPill {
+    display: none;
+  }
+}

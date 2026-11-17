@@ -1,16 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import './ControlPanel.css';
 import type {
   ConditionDecision,
+  ConditionPolicy,
   GeneratedArtifact,
   ProjectFilePath,
 } from '@preptex/core';
 import { isInputHandlingOption, type CoreOptionsUI } from '../model/useControl';
 
+export type TransformationScopeOption = 'source' | 'selected';
+
 export type ControlPanelProps = {
   options: CoreOptionsUI;
   onChange: (next: CoreOptionsUI) => void;
   entryFile?: ProjectFilePath;
+  conditionPolicy?: ConditionPolicy;
+  hasConditionals?: boolean;
+  detectedConditions?: readonly string[];
+  onConfigureConditions?: (policy: ConditionPolicy) => void;
+  defaultTransformTarget?: TransformationScopeOption;
+  canRunSourceTransformations?: boolean;
   canRealizeConditions?: boolean;
   realizeConditionsReason?: string;
   onRealizeConditions?: (
@@ -29,10 +38,13 @@ export type ControlPanelProps = {
 
   canRunViewTransformations?: boolean;
   viewTransformationReason?: string;
-  onPreviewCommentSuppression?: (suppressCommentEnvironments: boolean) => void;
+  onPreviewCommentSuppression?: (
+    suppressCommentEnvironments: boolean,
+    target?: 'selected' | 'source',
+  ) => void;
   onPreviewRemoveEnvironments?: (
     names: readonly string[],
-    target: 'selected' | 'artifact',
+    target: 'selected' | 'artifact' | 'source',
   ) => void;
   onExportProject?: () => void;
   canExportProject?: boolean;
@@ -57,6 +69,12 @@ export default function ControlPanel({
   options,
   onChange,
   entryFile = '',
+  conditionPolicy,
+  hasConditionals = false,
+  detectedConditions = [],
+  onConfigureConditions,
+  defaultTransformTarget = 'selected',
+  canRunSourceTransformations,
   canRealizeConditions = false,
   realizeConditionsReason,
   onRealizeConditions,
@@ -84,15 +102,51 @@ export default function ControlPanel({
 }: ControlPanelProps) {
   const [realizeInputs, setRealizeInputs] = useState<'preserve' | 'inline'>('preserve');
   const [suppressCommentEnvs, setSuppressCommentEnvs] = useState(false);
+  const [transformScope, setTransformScope] = useState<TransformationScopeOption>(
+    defaultTransformTarget,
+  );
 
   const [envNamesText, setEnvNamesText] = useState('');
-  const [envTarget, setEnvTarget] = useState<'selected' | 'artifact'>('selected');
+  const [envTarget, setEnvTarget] = useState<'selected' | 'artifact' | 'source'>(
+    defaultTransformTarget,
+  );
 
   const [compRealize, setCompRealize] = useState(true);
   const [compSuppressComments, setCompSuppressComments] = useState(true);
   const [compSuppressCommentEnvs, setCompSuppressCommentEnvs] = useState(false);
   const [compRemoveEnvs, setCompRemoveEnvs] = useState('');
   const [compFinalExport, setCompFinalExport] = useState(false);
+
+  const [inlinePolicyMode, setInlinePolicyMode] = useState<ConditionPolicy['mode']>(
+    conditionPolicy && conditionPolicy.mode !== 'ignore' ? conditionPolicy.mode : 'source',
+  );
+  const [inlineOverrides, setInlineOverrides] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setTransformScope(defaultTransformTarget);
+    setEnvTarget(defaultTransformTarget);
+  }, [defaultTransformTarget]);
+
+  const effectiveCanRunSource = canRunSourceTransformations ?? canRunViewTransformations;
+  const commentsEnabled =
+    transformScope === 'source' ? effectiveCanRunSource : canRunViewTransformations;
+  const envRemovalEnabled =
+    envTarget === 'source' ? effectiveCanRunSource : canRunViewTransformations;
+
+  const applyInlineConditions = () => {
+    if (!onConfigureConditions) return;
+    if (inlinePolicyMode === 'none') {
+      onConfigureConditions({ mode: 'none' });
+    } else if (inlinePolicyMode === 'manual') {
+      onConfigureConditions({ mode: 'manual', values: inlineOverrides });
+    } else if (inlinePolicyMode === 'source-with-overrides') {
+      onConfigureConditions({ mode: 'source-with-overrides', overrides: inlineOverrides });
+    } else if (inlinePolicyMode === 'ignore') {
+      onConfigureConditions({ mode: 'ignore' });
+    } else {
+      onConfigureConditions({ mode: 'source' });
+    }
+  };
 
   const outputPreview =
     options.outputName || (entryFile ? entryFile : 'main.tex');
@@ -178,6 +232,85 @@ export default function ControlPanel({
             </div>
           ) : null}
 
+          {hasConditionals && onConfigureConditions ? (
+            <div className="ControlInlinePhase0">
+              <div className="ControlInlinePhase0Header">
+                <strong>Condition Paths (Phase 0)</strong>
+                <span className="ControlInlinePhase0Mode">
+                  Active: {conditionPolicy?.mode ?? 'ignore'}
+                </span>
+              </div>
+              <select
+                className="ControlInput"
+                aria-label="Realization condition policy"
+                value={inlinePolicyMode}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (
+                    val === 'source' ||
+                    val === 'source-with-overrides' ||
+                    val === 'manual' ||
+                    val === 'none' ||
+                    val === 'ignore'
+                  ) {
+                    setInlinePolicyMode(val);
+                  }
+                }}
+              >
+                <option value="source">Follow source declarations &amp; setters</option>
+                <option value="source-with-overrides">Source with named overrides</option>
+                <option value="manual">Force explicit boolean values</option>
+                <option value="ignore">Ignore conditionals (all branches)</option>
+                <option value="none">Condition-free (none)</option>
+              </select>
+              {detectedConditions.length > 0 &&
+              (inlinePolicyMode === 'source-with-overrides' || inlinePolicyMode === 'manual') ? (
+                <div className="ControlInlineConditionsGrid">
+                  {detectedConditions.map((cond) => {
+                    const current = inlineOverrides[cond];
+                    const valueStr = current === true ? 'true' : current === false ? 'false' : 'follow';
+                    return (
+                      <label key={cond} className="ControlInlineCondRow">
+                        <span><code>\if{cond}</code></span>
+                        <select
+                          className="ControlInput"
+                          value={valueStr}
+                          aria-label={`Condition \\if${cond}`}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === 'follow') {
+                              const next = { ...inlineOverrides };
+                              delete next[cond];
+                              setInlineOverrides(next);
+                            } else {
+                              setInlineOverrides({ ...inlineOverrides, [cond]: v === 'true' });
+                            }
+                          }}
+                        >
+                          {inlinePolicyMode === 'source-with-overrides' ? (
+                            <option value="follow">Follow source</option>
+                          ) : null}
+                          {inlinePolicyMode === 'manual' && current === undefined ? (
+                            <option value="follow">(Choose...)</option>
+                          ) : null}
+                          <option value="true">True</option>
+                          <option value="false">False</option>
+                        </select>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="ControlButton ControlButton--secondary"
+                onClick={applyInlineConditions}
+              >
+                Apply Condition Paths
+              </button>
+            </div>
+          ) : null}
+
           {onRealizeConditions ? (
             <div className="ControlActionButtons">
               <button
@@ -251,19 +384,38 @@ export default function ControlPanel({
           </div>
         </div>
 
-        {/* Card 3: Pipeline A — Structural Edits */}
+        {/* Card 3: Pipeline A — Structural & Whole-Document Edits */}
         <div className="ControlCard ControlCard--transformations">
           <div className="ControlCardHeader">
             <div className="ControlConditionsHeader">
-              <h3>Structural Edits</h3>
-              <span className="ControlPipelineBadge">Pipeline A</span>
+              <h3>Document Edits</h3>
+              <span className="ControlPipelineBadge">Diff Staged</span>
             </div>
-            <p className="ControlSubtitle">Preview and apply changes on the realized view</p>
+            <p className="ControlSubtitle">
+              Preview changes in Diff Review before overwriting files (undoable with &larr;/&rarr;)
+            </p>
           </div>
 
           {onPreviewCommentSuppression ? (
             <div className="ControlSubgroup">
               <h4>Comment Suppression</h4>
+              <label className="ControlField" htmlFor="commentScopeSelect">
+                <span>Scope</span>
+                <select
+                  id="commentScopeSelect"
+                  className="ControlInput"
+                  value={transformScope}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'source' || val === 'selected') {
+                      setTransformScope(val);
+                    }
+                  }}
+                >
+                  <option value="source">All branches / whole document</option>
+                  <option value="selected">Configured branch only</option>
+                </select>
+              </label>
               <label className="ControlCheck">
                 <input
                   type="checkbox"
@@ -275,13 +427,19 @@ export default function ControlPanel({
               <button
                 type="button"
                 className="ControlButton ControlButton--secondary"
-                disabled={!canRunViewTransformations}
+                disabled={!commentsEnabled}
                 title={
-                  canRunViewTransformations
-                    ? 'Preview comment suppression edits on realized view'
-                    : viewTransformationReason || 'A ready view is required'
+                  commentsEnabled
+                    ? 'Preview comment suppression edits in Diff Review'
+                    : viewTransformationReason || 'A ready view is required for single-branch edits'
                 }
-                onClick={() => onPreviewCommentSuppression(suppressCommentEnvs)}
+                onClick={() => {
+                  if (transformScope === 'source') {
+                    onPreviewCommentSuppression(suppressCommentEnvs, 'source');
+                  } else {
+                    onPreviewCommentSuppression(suppressCommentEnvs);
+                  }
+                }}
               >
                 Preview Comments
               </button>
@@ -313,12 +471,13 @@ export default function ControlPanel({
                     value={envTarget}
                     onChange={(e) => {
                       const val = e.target.value;
-                      if (val === 'selected' || val === 'artifact') {
+                      if (val === 'source' || val === 'selected' || val === 'artifact') {
                         setEnvTarget(val);
                       }
                     }}
                   >
-                    <option value="selected">Source edits (selected)</option>
+                    <option value="source">All branches / whole document</option>
+                    <option value="selected">Configured branch (selected)</option>
                     <option value="artifact">Inlined artifact</option>
                   </select>
                 </label>
@@ -326,9 +485,9 @@ export default function ControlPanel({
               <button
                 type="button"
                 className="ControlButton ControlButton--secondary"
-                disabled={!canRunViewTransformations || !envNamesText.trim()}
+                disabled={!envRemovalEnabled || !envNamesText.trim()}
                 title={
-                  canRunViewTransformations
+                  envRemovalEnabled
                     ? 'Preview or generate environment removal'
                     : viewTransformationReason || 'A ready view is required'
                 }
