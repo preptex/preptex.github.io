@@ -1,6 +1,7 @@
 export interface DroppedFileItem {
   readonly file: File;
   readonly relativePath: string;
+  readonly fromDirectory?: boolean;
 }
 
 interface WebKitEntryLike {
@@ -43,19 +44,23 @@ function readAllDirectoryEntries(entry: WebKitEntryLike): Promise<WebKitEntryLik
   });
 }
 
-async function traverseEntry(entry: WebKitEntryLike, prefix: string): Promise<DroppedFileItem[]> {
+async function traverseEntry(
+  entry: WebKitEntryLike,
+  prefix: string,
+  fromDirectory = false,
+): Promise<DroppedFileItem[]> {
   const path = prefix ? `${prefix}/${entry.name}` : entry.name;
   if (entry.isFile && entry.file) {
     return new Promise((resolve) => {
       entry.file!(
-        (file) => resolve([{ file, relativePath: path }]),
+        (file) => resolve([{ file, relativePath: path, fromDirectory }]),
         () => resolve([]),
       );
     });
   }
   if (entry.isDirectory) {
     const children = await readAllDirectoryEntries(entry);
-    const nested = await Promise.all(children.map((child) => traverseEntry(child, path)));
+    const nested = await Promise.all(children.map((child) => traverseEntry(child, path, true)));
     return nested.flat();
   }
   return [];
@@ -70,13 +75,17 @@ export async function extractDroppedFiles(dataTransfer: DataTransfer | null): Pr
     .filter((entry): entry is WebKitEntryLike => entry !== null);
 
   if (entries.length > 0) {
-    const traversed = await Promise.all(entries.map((entry) => traverseEntry(entry, '')));
+    const traversed = await Promise.all(entries.map((entry) => traverseEntry(entry, '', false)));
     const flat = traversed.flat();
     if (flat.length > 0) return flat;
   }
 
-  return Array.from(dataTransfer.files).map((file) => ({
-    file,
-    relativePath: (file.webkitRelativePath || file.name).replace(/\\/g, '/'),
-  }));
+  return Array.from(dataTransfer.files).map((file) => {
+    const relativePath = (file.webkitRelativePath || file.name).replace(/\\/g, '/');
+    return {
+      file,
+      relativePath,
+      fromDirectory: Boolean(file.webkitRelativePath && file.webkitRelativePath.includes('/')),
+    };
+  });
 }

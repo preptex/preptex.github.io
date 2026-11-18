@@ -8,8 +8,10 @@ export interface LogDialogProps extends LogPanelProps {
   readonly variant?: 'dialog' | 'view';
   readonly onRunReferences?: () => void;
   readonly canRunReferences?: boolean;
+  readonly referencesReason?: string;
   readonly onRunCommandUsage?: () => void;
   readonly canRunCommandUsage?: boolean;
+  readonly commandUsageReason?: string;
   readonly isAnalyzing?: boolean;
 }
 
@@ -19,8 +21,10 @@ export function LogDialog({
   variant = 'dialog',
   onRunReferences,
   canRunReferences = false,
+  referencesReason,
   onRunCommandUsage,
   canRunCommandUsage = false,
+  commandUsageReason,
   isAnalyzing = false,
   ...logPanelProps
 }: LogDialogProps) {
@@ -54,10 +58,10 @@ export function LogDialog({
           <h2 id="log-dialog-title">{variant === 'view' ? 'Diagnostics & Checks' : 'Processing Log'}</h2>
           <span className="LogDialogSubtitle">
             {error
-              ? 'Parsing encountered an error'
+              ? 'Processing encountered an error'
               : count > 0
               ? `${count} diagnostic${count === 1 ? '' : 's'} / finding${count === 1 ? '' : 's'}`
-              : 'Diagnostics, syntax warnings, and analysis findings'}
+              : 'Run structural checks (References / Commands) or inspect warnings and analysis findings'}
           </span>
         </div>
         {variant === 'view' ? (
@@ -67,6 +71,11 @@ export function LogDialog({
                 type="button"
                 className="LogDialogBtn LogDialogBtn--secondary"
                 disabled={!canRunReferences || isAnalyzing}
+                title={
+                  canRunReferences
+                    ? 'Verify label references across active files'
+                    : referencesReason || 'Configure a ready project view to check references'
+                }
                 onClick={onRunReferences}
               >
                 Check References
@@ -77,6 +86,11 @@ export function LogDialog({
                 type="button"
                 className="LogDialogBtn LogDialogBtn--secondary"
                 disabled={!canRunCommandUsage || isAnalyzing}
+                title={
+                  canRunCommandUsage
+                    ? 'Check defined vs recognized commands'
+                    : commandUsageReason || 'Configure a ready project view to check commands'
+                }
                 onClick={onRunCommandUsage}
               >
                 Check Commands

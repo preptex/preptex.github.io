@@ -13,10 +13,34 @@ const defaultOptions: CoreOptionsUI = {
 };
 
 describe('ControlPanel', () => {
-  test('renders options and triggers Pipeline B condition realization & Pipeline A export', () => {
+  test('contains only code transformations (no analyses) and no per-box apply buttons', () => {
+    render(
+      <ControlPanel
+        options={defaultOptions}
+        onChange={jest.fn()}
+        entryFile="main.tex"
+        canRealizeConditions={true}
+        canRunViewTransformations={true}
+        onApplyTransformations={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Check References' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check Commands' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Realize Conditions' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Suppress Comments' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Remove Environments' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', { name: /Expand \/ Flatten \\input Commands/i }),
+    ).toBeInTheDocument();
+
+    // Only a single apply button exists in the unified apply panel
+    expect(screen.getByRole('button', { name: /Preview & Apply in Place/i })).toBeDisabled();
+  });
+
+  test('boxes are expandable/activatable and unified Apply supports in-place vs new folder output', () => {
     const onChange = jest.fn();
-    const onRealizeConditions = jest.fn();
-    const onExportProject = jest.fn();
+    const onApplyTransformations = jest.fn();
 
     render(
       <ControlPanel
@@ -24,9 +48,8 @@ describe('ControlPanel', () => {
         onChange={onChange}
         entryFile="main.tex"
         canRealizeConditions={true}
-        onRealizeConditions={onRealizeConditions}
-        canExportProject={true}
-        onExportProject={onExportProject}
+        canRunViewTransformations={true}
+        onApplyTransformations={onApplyTransformations}
         conditionDecisions={[
           {
             origin: {
@@ -44,75 +67,38 @@ describe('ControlPanel', () => {
       />,
     );
 
-    expect(screen.getByLabelText('Entry file')).toHaveValue('main.tex');
+    // Expand all discloses condition decisions and option controls
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
     expect(screen.getByText('\\ifdraft')).toBeInTheDocument();
     expect(screen.getByText('true')).toBeInTheDocument();
 
-    // Trigger Pipeline B in-place realization
-    fireEvent.click(screen.getByRole('button', { name: 'Realize Conditions in Place' }));
-    expect(onRealizeConditions).toHaveBeenCalledWith('preview-edits', 'preserve');
+    // Activate Realize Conditions + Suppress Comments, run in-place
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Realize Conditions' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Suppress Comments' }));
 
-    // Toggle suppress comments and export
-    fireEvent.click(screen.getByLabelText('Suppress comments'));
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ suppressComments: true }),
+    fireEvent.click(screen.getByRole('button', { name: /Preview & Apply in Place/i }));
+    expect(onApplyTransformations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destination: 'inplace',
+        realizeConditions: true,
+        suppressComments: expect.objectContaining({ enabled: true }),
+      }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Export Project' }));
-    expect(onExportProject).toHaveBeenCalledTimes(1);
-  });
+    // Switch destination to Output new file(s) inside a custom folder
+    fireEvent.click(screen.getByRole('radio', { name: /Output new file\(s\)/i }));
+    fireEvent.change(screen.getByLabelText(/Output folder/i), { target: { value: 'out/clean' } });
+    expect(screen.getByText('Output path example: out/clean/main.tex')).toBeInTheDocument();
 
-  test('renders and triggers independent analysis actions', () => {
-    const onRunReferences = jest.fn();
-    const onRunCommandUsage = jest.fn();
-
-    render(
-      <ControlPanel
-        options={defaultOptions}
-        onChange={jest.fn()}
-        entryFile="main.tex"
-        canRunReferences={true}
-        onRunReferences={onRunReferences}
-        canRunCommandUsage={false}
-        commandUsageReason="Project view is blocked"
-        onRunCommandUsage={onRunCommandUsage}
-      />,
+    fireEvent.click(screen.getByRole('button', { name: /Create New File\(s\)/i }));
+    expect(onApplyTransformations).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        destination: 'new-files',
+        outputFolder: 'out/clean',
+        realizeConditions: true,
+        suppressComments: expect.objectContaining({ enabled: true }),
+      }),
     );
-
-    const refBtn = screen.getByRole('button', { name: 'Check References' });
-    expect(refBtn).toBeEnabled();
-    fireEvent.click(refBtn);
-    expect(onRunReferences).toHaveBeenCalledTimes(1);
-
-    const cmdBtn = screen.getByRole('button', { name: 'Check Commands' });
-    expect(cmdBtn).toBeDisabled();
-    expect(cmdBtn).toHaveAttribute('title', 'Project view is blocked');
-  });
-
-  test('triggers comment suppression and environment removal previews on realized view', () => {
-    const onPreviewCommentSuppression = jest.fn();
-    const onPreviewRemoveEnvironments = jest.fn();
-
-    render(
-      <ControlPanel
-        options={defaultOptions}
-        onChange={jest.fn()}
-        entryFile="main.tex"
-        canRunViewTransformations={true}
-        onPreviewCommentSuppression={onPreviewCommentSuppression}
-        onPreviewRemoveEnvironments={onPreviewRemoveEnvironments}
-      />,
-    );
-
-    const commentBtn = screen.getByRole('button', { name: /preview comments/i });
-    fireEvent.click(commentBtn);
-    expect(onPreviewCommentSuppression).toHaveBeenCalledWith(false);
-
-    const envInput = screen.getByPlaceholderText(/e\.g\. comment, C/i);
-    fireEvent.change(envInput, { target: { value: 'C, comment' } });
-    const envBtn = screen.getByRole('button', { name: /preview removal/i });
-    fireEvent.click(envBtn);
-    expect(onPreviewRemoveEnvironments).toHaveBeenCalledWith(['C', 'comment'], 'selected');
   });
 
   test('renders generated artifacts and triggers ZIP download', () => {

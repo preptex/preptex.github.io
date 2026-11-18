@@ -1,5 +1,5 @@
 import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { CoarseTreeOptions, ConditionPolicy, ProjectIssue } from '@preptex/core';
+import type { CoarseTreeOptions, ConditionPolicy, ProjectIssue, ViewInputMode } from '@preptex/core';
 import { isLayoutNodeKind, LAYOUT_NODE_KINDS } from '../../types/LayoutNode';
 import type { LayoutNode, LayoutNodeKind } from '../../types/LayoutNode';
 import TreeNode from './TreeNode';
@@ -17,6 +17,9 @@ export interface ASTviewProps {
   onChangeStructureMode?: (mode: AstStructureMode) => void;
   isConfiguredAvailable?: boolean;
   viewIssue?: ProjectIssue | null;
+  inputMode?: ViewInputMode;
+  onChangeInputMode?: (mode: ViewInputMode) => void;
+  inputWarnings?: readonly ProjectIssue[];
   coarseOptions?: CoarseTreeOptions;
   onChangeCoarseOptions?: (next: CoarseTreeOptions) => void;
   hasConditionals?: boolean;
@@ -35,8 +38,8 @@ const DEFAULT_VISIBLE_NODE_KINDS: readonly LayoutNodeKind[] = [
   'root',
   'section',
 ];
-const DEFAULT_COMMANDS = ['title', 'author', 'label', 'ref', 'cite', 'includegraphics'];
-const DEFAULT_VISIBLE_COMMANDS = ['title', 'author'];
+const DEFAULT_COMMANDS = ['title', 'author', 'input', 'label', 'ref', 'cite', 'includegraphics'];
+const DEFAULT_VISIBLE_COMMANDS = ['title', 'author', 'input'];
 const DEFAULT_ENVIRONMENTS = [
   'document',
   'abstract',
@@ -187,6 +190,9 @@ export default function ASTview({
   onChangeStructureMode,
   isConfiguredAvailable = true,
   viewIssue = null,
+  inputMode = 'command',
+  onChangeInputMode,
+  inputWarnings = [],
   coarseOptions = {},
   onChangeCoarseOptions,
   hasConditionals = false,
@@ -320,6 +326,27 @@ export default function ASTview({
       <div className="AstTreeHeader">
         <h2>AST View</h2>
         <div className="AstTreeActions">
+          {!collapsed && onChangeInputMode ? (
+            <div className="AstTreeModeToggle" role="group" aria-label="Input handling mode">
+              <button
+                type="button"
+                className={`AstTreeModeBtn ${inputMode === 'command' ? 'AstTreeModeBtn--active' : ''}`}
+                onClick={() => onChangeInputMode('command')}
+                title="Handle \\input as a command in the entry file only"
+              >
+                Command
+              </button>
+              <button
+                type="button"
+                className={`AstTreeModeBtn ${inputMode === 'recursive' ? 'AstTreeModeBtn--active' : ''}`}
+                onClick={() => onChangeInputMode('recursive')}
+                title="Recursively parse and transform \\input targets"
+              >
+                Recursive
+              </button>
+            </div>
+          ) : null}
+
           {!collapsed && onChangeStructureMode ? (
             <div className="AstTreeModeToggle" role="group" aria-label="Tree view mode">
               <button
@@ -398,6 +425,7 @@ export default function ASTview({
                             [
                               ['includeSections', 'Sections', true],
                               ['includeEnvironments', 'Environments', true],
+                              ['includeInputs', 'Inputs', true],
                               ['includeCustomAndUndefinedCommands', 'Custom/Undefined cmds', true],
                               ['includeBuiltinCommands', 'Built-in cmds', false],
                               ['includeArguments', 'Arguments', true],
@@ -574,6 +602,21 @@ export default function ASTview({
           ) : null}
         </div>
       </div>
+
+      {!collapsed && inputWarnings.length > 0 ? (
+        <div className="AstPhase0Prompt" role="status" aria-label="Missing input warnings">
+          <div className="AstPhase0PromptHeader">
+            <strong>
+              {inputWarnings.length === 1
+                ? 'Missing \\input warning'
+                : `${inputWarnings.length} missing \\input warnings`}
+            </strong>
+          </div>
+          <p className="AstPhase0Desc">
+            {inputWarnings.map((warning) => warning.message).join(' · ')}
+          </p>
+        </div>
+      ) : null}
 
       {!collapsed && hasConditionals && onConfigureConditions ? (
         <div className="AstPhase0Region">

@@ -1,5 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import type { ConditionPolicy, CustomCommandSignature, ProjectFilePath } from '@preptex/core';
+import type {
+  ConditionPolicy,
+  CustomCommandSignature,
+  ProjectFilePath,
+  ViewInputMode,
+} from '@preptex/core';
 import type { FilesMap } from '../types/files';
 import type { ProjectConfigurationState } from '../model/useProjectConfiguration';
 import './ProjectSetupDialog.css';
@@ -52,6 +57,7 @@ export function ProjectSetupDialog({
   const [traversal, setTraversal] = useState<'project' | 'file-only'>(
     configuration.traversal,
   );
+  const [inputMode, setInputMode] = useState<ViewInputMode>(configuration.inputs);
   const [policyMode, setPolicyMode] = useState<ConditionPolicy['mode']>(
     configuration.conditionPolicy.mode,
   );
@@ -75,6 +81,7 @@ export function ProjectSetupDialog({
         '';
       setEntryPath(recommended);
       setTraversal(configuration.traversal);
+      setInputMode(configuration.inputs);
       setPolicyMode(configuration.conditionPolicy.mode);
       if (configuration.conditionPolicy.mode === 'source-with-overrides') {
         setConditionOverrides({ ...configuration.conditionPolicy.overrides });
@@ -129,6 +136,7 @@ export function ProjectSetupDialog({
     onApply({
       entryPath: entryPath ? entryPath : null,
       traversal,
+      inputs: inputMode,
       conditionPolicy,
     });
     if (variant === 'dialog') {
@@ -189,33 +197,52 @@ export function ProjectSetupDialog({
           </p>
         </div>
 
-        {/* Semantic traversal */}
+        {/* Input handling */}
         <div className="ProjectSetupSection">
-          <span className="ProjectSetupLabel">Input Traversal</span>
+          <span className="ProjectSetupLabel">\input Handling</span>
           <div className="ProjectSetupRadioGroup">
             <label>
               <input
                 type="radio"
-                name="traversal"
-                value="project"
-                checked={traversal === 'project'}
-                onChange={() => setTraversal('project')}
+                name="inputMode"
+                value="command"
+                checked={inputMode === 'command'}
+                onChange={() => {
+                  setInputMode('command');
+                  setTraversal('file-only');
+                }}
               />{' '}
-              Follow reachable inputs
+              Command (entry file only, default)
             </label>
             <label>
               <input
                 type="radio"
-                name="traversal"
-                value="file-only"
-                checked={traversal === 'file-only'}
-                onChange={() => setTraversal('file-only')}
+                name="inputMode"
+                value="recursive"
+                checked={inputMode === 'recursive'}
+                onChange={() => {
+                  setInputMode('recursive');
+                  setTraversal('project');
+                }}
               />{' '}
-              Entry file only
+              Recursive — follow <code>\input</code> files for AST &amp; transforms
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="inputMode"
+                value="inline"
+                checked={inputMode === 'inline'}
+                onChange={() => {
+                  setInputMode('inline');
+                  setTraversal('project');
+                }}
+              />{' '}
+              Inline — flatten <code>\input</code> targets into AST stream
             </label>
           </div>
           <p className="ProjectSetupHelp">
-            Project traversal traces active <code>\input</code> commands (including subfolder relative paths) to resolve cross-file structure.
+            By default, <code>\input</code> is treated like an ordinary command so edits stay scoped to the entry file. Missing <code>\input</code> targets emit warnings without halting processing.
           </p>
         </div>
 

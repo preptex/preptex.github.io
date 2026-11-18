@@ -52,17 +52,33 @@ test('structural error blocks view and recovers when source is fixed', () => {
   expect(exportedSources).toEqual([{ path: 'main.tex', source: 'Recovered' }]);
 });
 
-test('missing input issue clears after uploading the dependency', () => {
+test('missing input emits a non-halting warning in recursive mode and clears after uploading the dependency', () => {
   const { result } = renderHook(useTestProject);
   act(() => {
     result.current.files.upsertTextFiles({ 'main.tex': '\\input{part}' });
   });
-  expect(result.current.model.isReady).toBe(false);
-  expect(result.current.model.viewIssue?.code).toBe('missing-input');
+
+  // Default inputs: 'command' keeps the view ready with no missing-input warning.
+  expect(result.current.config.inputs).toBe('command');
+  expect(result.current.model.isReady).toBe(true);
+  expect(result.current.model.issues.some((i) => i.code === 'missing-input')).toBe(false);
+
+  // Switching to recursive mode follows \input and warns without halting when part.tex is absent.
+  act(() => {
+    result.current.config.setInputMode('recursive');
+  });
+  expect(result.current.model.isReady).toBe(true);
+  expect(result.current.model.viewIssue).toBeNull();
+  expect(result.current.model.issues).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: 'missing-input', severity: 'warning' }),
+    ]),
+  );
 
   act(() => result.current.files.upsertTextFiles({ 'part.tex': 'Part' }));
   expect(result.current.model.isReady).toBe(true);
   expect(result.current.model.viewIssue).toBeNull();
+  expect(result.current.model.issues.some((i) => i.code === 'missing-input')).toBe(false);
 
   let exportedSources: readonly { path: string; source: string }[] = [];
   act(() => {

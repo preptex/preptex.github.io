@@ -1,10 +1,10 @@
 .WorkspaceHeader {
-  height: 48px;
-  padding: 0 12px;
+  height: 46px;
+  padding: 0 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   position: relative;
@@ -15,59 +15,90 @@
 .WorkspaceHeaderGroup {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
 }
 
 .WorkspaceHeaderRight {
   margin-left: auto;
+  gap: 8px;
+}
+
+.HeaderBrandGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding-right: 4px;
+}
+
+.HeaderLogoSvg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .HeaderBrand {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   color: var(--color-text);
-  padding: 0 6px 0 4px;
   white-space: nowrap;
 }
 
-.HeaderIconButton,
-.HeaderMenuButton {
+/* Continuous menubar strip */
+.HeaderMenubar {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+}
+
+.HeaderMenuAnchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.HeaderMenubarTrigger {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 30px;
-  padding: 0 10px;
+  height: 28px;
+  padding: 0 11px;
+  border: none;
   border-radius: 7px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
-.HeaderIconButton:hover:not(:disabled),
-.HeaderMenuButton:hover:not(:disabled) {
-  background: var(--color-surface-subtle);
-  border-color: var(--color-border-strong);
+.HeaderMenubarTrigger:hover {
+  background: rgba(15, 23, 42, 0.05);
 }
 
-.HeaderIconButton:disabled,
-.HeaderMenuButton:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
+.HeaderMenubarTrigger:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
 }
 
-.HeaderIconButton.is-active,
-.HeaderMenuButton.is-open {
-  background: rgba(37, 99, 235, 0.1);
-  border-color: rgba(37, 99, 235, 0.35);
+.HeaderMenubarTrigger.is-open,
+.HeaderMenubarTrigger[aria-expanded='true'] {
+  background: var(--color-surface);
   color: var(--color-primary);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.HeaderDotIndicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-primary);
 }
 
 .HeaderCaret {
@@ -78,30 +109,26 @@
 .HeaderActiveViewBadge {
   font-size: 11px;
   font-weight: 600;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 999px;
-  background: rgba(37, 99, 235, 0.12);
+  background: rgba(37, 99, 235, 0.11);
   color: var(--color-primary);
-}
-
-.HeaderMenuAnchor {
-  position: relative;
 }
 
 .HeaderDropdown,
 .ViewsDrawer {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 7px);
   left: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border-strong);
-  border-radius: 10px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+  border-radius: 11px;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.14);
   z-index: 60;
 }
 
 .HeaderDropdown {
-  width: 260px;
+  width: 268px;
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -125,18 +152,47 @@
   cursor: pointer;
 }
 
-.HeaderMenuItem:hover:not(:disabled) {
+.HeaderMenuItem:hover:not(:disabled),
+.HeaderMenuItem:focus-visible:not(:disabled) {
   background: var(--color-surface-subtle);
+  outline: none;
 }
 
 .HeaderMenuItem:disabled {
-  opacity: 0.45;
+  opacity: 0.42;
   cursor: not-allowed;
 }
 
-.HeaderMenuItem--danger:hover:not(:disabled) {
+.HeaderMenuItem--danger:hover:not(:disabled),
+.HeaderMenuItem--danger:focus-visible:not(:disabled) {
   background: rgba(220, 38, 38, 0.08);
   color: var(--color-danger);
+}
+
+.HeaderMenuItem--check::before {
+  content: '';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.HeaderMenuItem--check[aria-checked='true']::before {
+  content: '✓';
+}
+
+.HeaderMenuItem--check .HeaderMenuItemMain {
+  flex: 1;
+}
+
+.HeaderMenuArrow {
+  display: inline-block;
+  width: 14px;
+  color: var(--color-text-muted);
 }
 
 .HeaderMenuItemMain {
@@ -146,36 +202,41 @@
 .HeaderMenuItemHint {
   font-size: 11px;
   color: var(--color-text-muted);
-  max-width: 110px;
+  max-width: 118px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.HeaderMenuDivider {
+.HeaderMenuDivider,
+.HeaderMenuSeparator {
   height: 1px;
+  border: none;
   background: var(--color-border);
   margin: 4px 6px;
 }
 
 .ViewsDrawer {
-  width: 340px;
+  width: 344px;
+  max-height: calc(100dvh - 70px);
+  overflow-y: auto;
   padding: 8px;
 }
 
 .ViewsDrawerHeader {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10.5px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: var(--color-text-muted);
   padding: 4px 8px 6px;
 }
 
-.ViewsDrawerList {
+.ViewsDrawerList,
+.ViewsDrawerLayoutGroup {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .ViewsDrawerItem {
@@ -183,7 +244,7 @@
   align-items: flex-start;
   gap: 10px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 7px 10px;
   border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
@@ -193,8 +254,10 @@
   cursor: pointer;
 }
 
-.ViewsDrawerItem:hover {
+.ViewsDrawerItem:hover,
+.ViewsDrawerItem:focus-visible {
   background: var(--color-surface-subtle);
+  outline: none;
 }
 
 .ViewsDrawerItem.is-active {
@@ -225,7 +288,7 @@
 .ViewsDrawerText {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
   flex: 1;
 }
@@ -238,7 +301,7 @@
 }
 
 .ViewsDrawerTitle {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 
@@ -266,50 +329,30 @@
   color: var(--color-primary);
 }
 
-.WorkspaceQuickTabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px;
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  overflow-x: auto;
-  min-width: 0;
-}
-
-.QuickViewTab {
+.HeaderAlertPill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
   height: 26px;
-  padding: 0 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text-muted);
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
   font: inherit;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.QuickViewTab:hover {
-  color: var(--color-text);
-  background: rgba(15, 23, 42, 0.04);
+.HeaderAlertPill--accent {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.25);
+  color: var(--color-primary);
 }
 
-.QuickViewTab.is-active {
-  background: var(--color-surface);
-  color: var(--color-text);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
-}
-
-.HeaderHistoryGroup {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.HeaderAlertPill--warning {
+  background: rgba(217, 119, 6, 0.12);
+  border-color: rgba(217, 119, 6, 0.28);
+  color: #b45309;
 }
 
 .HeaderStatusPill {
@@ -317,13 +360,13 @@
   align-items: center;
   gap: 6px;
   height: 28px;
-  padding: 0 10px;
+  padding: 0 11px;
   border-radius: 999px;
   border: 1px solid var(--color-border);
   background: var(--color-surface-subtle);
   color: var(--color-text-muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 500;
   cursor: pointer;
   max-width: 240px;
@@ -352,25 +395,16 @@
   background: #16a34a;
 }
 
-.HeaderStatusPill--warning {
-  border-color: rgba(217, 119, 6, 0.35);
-  background: rgba(254, 243, 199, 0.6);
-  color: #92400e;
-}
-
 .HeaderStatusPill--warning .HeaderStatusDot {
   background: #d97706;
 }
 
-@media (max-width: 1080px) {
-  .WorkspaceQuickTabs {
+@media (max-width: 760px) {
+  .HeaderBrand {
     display: none;
   }
-}
 
-@media (max-width: 720px) {
-  .HeaderButtonText,
   .HeaderStatusPill {
-    display: none;
+    max-width: 140px;
   }
 }

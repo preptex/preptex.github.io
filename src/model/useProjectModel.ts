@@ -172,6 +172,7 @@ export function useProjectModel(
       const resolved = resolveProjectViewAdapter(snapshot, {
         entryPath: config.entryPath,
         traversal: config.traversal,
+        inputs: config.inputs,
         conditions: config.conditionPolicy,
         ...(config.customCommands && config.customCommands.length > 0
           ? { customCommands: config.customCommands }
@@ -185,6 +186,7 @@ export function useProjectModel(
     snapshot,
     config.entryPath,
     config.traversal,
+    config.inputs,
     config.conditionPolicy,
     config.customCommands,
     config.revision,
