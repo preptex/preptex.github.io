@@ -29,12 +29,36 @@
 }
 
 .WorkspaceSidebar.is-collapsed {
-  width: 0;
-  min-width: 0;
-  flex-basis: 0;
-  border-right: none;
-  overflow: hidden;
-  visibility: hidden;
+  display: none;
+}
+
+.WorkspaceCollapsedRail {
+  flex: 0 0 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 10px;
+  background: var(--color-surface-soft);
+  border-right: 1px solid var(--color-border);
+}
+
+.WorkspaceCollapsedRailBtn {
+  width: 22px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font: 600 12px/1 inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.WorkspaceCollapsedRailBtn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .WorkspaceViewport {
@@ -976,22 +1000,29 @@ section[aria-label='Files'] {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  gap: 7px;
   border: 0;
   background: transparent;
   padding: 0;
   margin: 0;
   cursor: pointer;
   color: inherit;
-  font: 12px/1.25 inherit;
+  font: 13px/1.3 inherit;
   text-align: left;
 }
 
+.AstTreeIconWrap {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
 .AstTreeIcon {
-  flex: 0 0 20px;
-  width: 20px;
-  height: 20px;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1002,7 +1033,42 @@ section[aria-label='Files'] {
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
-  box-shadow: inset 0 0 0 1px rgba(67, 56, 245, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(67, 56, 245, 0.1);
+  cursor: help;
+}
+
+.AstTreeIconSection {
+  font-size: 10px;
+  letter-spacing: -0.02em;
+}
+
+.AstTreeTypeHint {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  inset-block-start: auto;
+  inset-inline-end: auto;
+  margin: 0;
+  border: 0;
+  z-index: 2000;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: #0f172a;
+  color: #f8fafc;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.22);
+  pointer-events: auto;
+}
+
+.AstTreeIconWrap:hover .AstTreeTypeHint,
+.AstTreeTypeHint.is-open,
+.AstTreeTypeHint:is(:popover-open, .\:popover-open) {
+  display: block;
 }
 
 .AstTreeIcon--text {
@@ -1013,6 +1079,7 @@ section[aria-label='Files'] {
 .AstTreeIcon--command {
   background: var(--color-icon-command-bg);
   color: var(--color-icon-command-text);
+  font-size: 13px;
 }
 
 .AstTreeIcon--argument {
@@ -1029,6 +1096,13 @@ section[aria-label='Files'] {
 .AstTreeIcon--math {
   background: #fef3c7;
   color: #92400e;
+  font-size: 12px;
+}
+
+.AstTreeIcon--group {
+  background: #ecfeff;
+  color: #0e7490;
+  font-size: 10px;
 }
 
 .AstTreeIcon--text-block {
@@ -1053,18 +1127,18 @@ section[aria-label='Files'] {
   color: var(--color-icon-warning-text);
 }
 
-.AstTreeType {
-  flex: 0 0 auto;
+.AstTreeName {
+  flex: 0 1 auto;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   color: var(--color-text);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 600;
-  text-transform: lowercase;
+  font-size: 13.5px;
+  font-weight: 700;
 }
 
 .AstTreeTypeStar {
@@ -1089,6 +1163,7 @@ section[aria-label='Files'] {
 .AstTreeData {
   font-family: var(--font-mono);
   font-size: 11px;
+  font-weight: 400;
 }
 
 .AstTreeLine {

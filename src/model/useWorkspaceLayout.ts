@@ -10,7 +10,7 @@ export type WorkspaceViewId =
   | 'diff'
   | 'settings';
 
-export type WorkspaceMenuId = 'file' | 'views' | null;
+export type WorkspaceMenuId = 'file' | 'edit' | 'views' | null;
 
 export interface WorkspaceLayoutState {
   readonly activeView: WorkspaceViewId;

@@ -144,16 +144,42 @@ test('suppresses comments in exported artifacts without altering source snapshot
 
 test.each([
   ['missing.tex', 'Hello', 'missing-entry'],
-  ['main.tex', '\\input{missing}', 'missing-input'],
   ['main.tex', '\\input{main}', 'input-cycle'],
-] as const)('reports located view issue codes: %s / %s -> %s', (entryPath, source, code) => {
+] as const)('reports located blocking view issue codes: %s / %s -> %s', (entryPath, source, code) => {
   const snapshot = createProjectSnapshotAdapter([
     { path: 'main.tex', version: 1, source },
   ]);
-  const view = resolveProjectViewAdapter(snapshot, { entryPath });
+  const view = resolveProjectViewAdapter(snapshot, { entryPath, inputs: 'recursive' });
   expect(view.status).not.toBe('ready');
   if (view.status === 'ready') throw new Error('Expected non-ready view');
   expect(view.reason.code).toBe(code);
+});
+
+test('treats missing \\input as a non-halting warning in recursive mode and leaves view ready in command mode', () => {
+  const snapshot = createProjectSnapshotAdapter([
+    { path: 'main.tex', version: 1, source: 'Intro\n\\input{missing}\nOutro' },
+  ]);
+
+  const commandView = resolveProjectViewAdapter(snapshot, {
+    entryPath: 'main.tex',
+    inputs: 'command',
+  });
+  expect(commandView.status).toBe('ready');
+  expect(commandView.coverage.issues).toHaveLength(0);
+
+  const recursiveView = resolveProjectViewAdapter(snapshot, {
+    entryPath: 'main.tex',
+    inputs: 'recursive',
+  });
+  expect(recursiveView.status).toBe('ready');
+  expect(recursiveView.coverage.issues).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'missing-input',
+        severity: 'warning',
+      }),
+    ]),
+  );
 });
 
 test('distinguishes invalid API arguments and unexpected failures', () => {

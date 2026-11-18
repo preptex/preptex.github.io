@@ -38,9 +38,9 @@ export function OperationsDialog({
     >
       <div className="OperationsDialogHeader">
         <div className="OperationsDialogTitleGroup">
-          <h2 id="operations-dialog-title">Transformations &amp; Pipeline</h2>
+          <h2 id="operations-dialog-title">Transformations</h2>
           <span className="OperationsDialogSubtitle">
-            Apply whole-document transformations, condition realization, composed pipelines, and project exports
+            Activate and configure code transformations, then apply in place or output to new files
           </span>
         </div>
         {variant === 'dialog' ? (

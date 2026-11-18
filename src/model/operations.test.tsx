@@ -266,4 +266,55 @@ describe('Independent Analysis & Two-Pipeline Operations', () => {
 
     expect(result.current.files.filesByName['intro/history.tex']).toBe('History text');
   });
+
+  test('supports entry-only command scope vs recursive scope and expand-inputs with non-halting missing-input warnings', () => {
+    function useInputRevisionTest() {
+      const files = useFiles({
+        'main.tex': '% Entry comment\n\\input{chapters/part}\n\\input{missing_part}\n',
+        'chapters/part.tex': '% Part comment\nIncluded paragraph',
+      });
+      const config = useProjectConfiguration(files.filesByName, {
+        entryPath: 'main.tex',
+        conditionPolicy: { mode: 'ignore' },
+      });
+      const model = useProjectModel(files.filesByName, files.sourceRevision, config, files.fileVersions);
+      const operations = useOperations(model.snapshot, model.view);
+      return { files, config, model, operations };
+    }
+
+    const { result } = renderHook(useInputRevisionTest);
+
+    // Entry-only suppression ('file-only' matches default 'command' input mode).
+    act(() => {
+      result.current.operations.planTransformation({
+        operation: 'suppress-comments',
+        options: { target: 'source', entryPath: 'main.tex', traversal: 'file-only' },
+      });
+    });
+    expect(result.current.operations.pendingEditPlan?.edits).toHaveLength(1);
+    expect(result.current.operations.pendingEditPlan?.edits[0]?.path).toBe('main.tex');
+
+    // Expand inputs single pass replaces chapters/part and emits missing-input warning without halting.
+    act(() => {
+      result.current.operations.planTransformation({
+        operation: 'expand-inputs',
+        options: { mode: 'single', target: 'source', entryPath: 'main.tex' },
+      });
+    });
+
+    expect(result.current.operations.transformationError).toBeNull();
+    expect(result.current.operations.transformationIssues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'missing-input', severity: 'warning' }),
+      ]),
+    );
+    expect(result.current.operations.pendingEditPlan?.edits).toEqual([
+      expect.objectContaining({
+        kind: 'replace',
+        path: 'main.tex',
+        expected: '\\input{chapters/part}',
+        replacement: expect.stringContaining('% Part comment\nIncluded paragraph'),
+      }),
+    ]);
+  });
 });

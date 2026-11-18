@@ -65,7 +65,10 @@ import type {
   TransformationRequest,
   TransformationResult,
   ViewConfiguration,
+  ViewInputMode,
 } from '@preptex/core';
+
+export type { ViewInputMode };
 
 export type ProcessingError =
   | {

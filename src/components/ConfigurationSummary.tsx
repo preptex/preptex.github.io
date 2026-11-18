@@ -32,7 +32,7 @@ export function ConfigurationSummary({
   hasLogError = false,
   hasLogWarning = false,
 }: ConfigurationSummaryProps) {
-  const { entryPath, traversal, conditionPolicy } = configuration;
+  const { entryPath, traversal, inputs, conditionPolicy } = configuration;
 
   let badgeClass = 'ConfigurationBadge--blocked';
   let badgeLabel = 'Unconfigured';
@@ -57,13 +57,18 @@ export function ConfigurationSummary({
   }
 
   const policyDescription =
-    conditionPolicy.mode === 'source'
+    conditionPolicy.mode === 'ignore'
+      ? 'All branches (ignore)'
+      : conditionPolicy.mode === 'source'
       ? 'Follow source'
       : conditionPolicy.mode === 'source-with-overrides'
       ? 'Source with overrides'
       : conditionPolicy.mode === 'manual'
       ? 'Forced values'
       : 'Condition-free (none)';
+
+  const inputModeLabel =
+    inputs === 'recursive' ? 'Recursive' : inputs === 'inline' ? 'Inline' : 'Command';
 
   return (
     <div className="ConfigurationSummary" role="region" aria-label="Project configuration summary">
@@ -82,6 +87,10 @@ export function ConfigurationSummary({
         <span>&bull;</span>
         <span>
           <strong>Traversal:</strong> {traversal === 'project' ? 'Project' : 'File only'}
+        </span>
+        <span>&bull;</span>
+        <span>
+          <strong>Inputs:</strong> {inputModeLabel}
         </span>
         <span>&bull;</span>
         <span>

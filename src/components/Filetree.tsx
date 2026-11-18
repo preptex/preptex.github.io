@@ -20,11 +20,15 @@ export interface FiletreeProps {
   readonly onDownload?: (path: string) => void;
   readonly onRemove?: (path: string) => void;
   readonly onUploadFiles?: (files: FileList) => void;
+  readonly onUploadFolder?: (files: FileList) => void;
   readonly onDropFiles?: (items: readonly DroppedFileItem[]) => void;
   readonly uploadError?: string | null;
+  readonly uploadNotice?: string | null;
+  readonly onDismissUploadNotice?: () => void;
   readonly uploadFilesTrigger?: number;
   readonly uploadFolderTrigger?: number;
   readonly newFileTrigger?: number;
+  readonly onCollapseSidebar?: () => void;
 }
 
 type FiletreeNode = {
@@ -282,11 +286,15 @@ export default function Filetree({
   onDownload,
   onRemove,
   onUploadFiles,
+  onUploadFolder,
   onDropFiles,
   uploadError,
+  uploadNotice,
+  onDismissUploadNotice,
   uploadFilesTrigger,
   uploadFolderTrigger,
   newFileTrigger,
+  onCollapseSidebar,
 }: FiletreeProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -347,6 +355,18 @@ export default function Filetree({
     const fileList = e.target.files;
     if (fileList && fileList.length > 0 && onUploadFiles) {
       onUploadFiles(fileList);
+    }
+    e.target.value = '';
+  };
+
+  const onFolderChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (fileList && fileList.length > 0) {
+      if (onUploadFolder) {
+        onUploadFolder(fileList);
+      } else if (onUploadFiles) {
+        onUploadFiles(fileList);
+      }
     }
     e.target.value = '';
   };
@@ -452,6 +472,17 @@ export default function Filetree({
               </button>
             </>
           ) : null}
+          {onCollapseSidebar ? (
+            <button
+              type="button"
+              className="FiletreeToolBtn FiletreeToolBtn--collapse"
+              onClick={onCollapseSidebar}
+              title="Hide file explorer"
+              aria-label="Hide file explorer"
+            >
+              «
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -484,7 +515,7 @@ export default function Filetree({
             aria-label="Upload folder"
             type="file"
             multiple
-            onChange={onFilesChange}
+            onChange={onFolderChange}
             style={{ display: 'none' }}
           />
         </div>
@@ -533,6 +564,22 @@ export default function Filetree({
       {uploadError ? (
         <div className="FiletreeUploadError" role="alert">
           {uploadError}
+        </div>
+      ) : null}
+
+      {uploadNotice ? (
+        <div className="FiletreeUploadNotice" role="status">
+          <span>{uploadNotice}</span>
+          {onDismissUploadNotice ? (
+            <button
+              type="button"
+              className="FiletreeUploadNoticeDismiss"
+              aria-label="Dismiss upload notice"
+              onClick={onDismissUploadNotice}
+            >
+              &times;
+            </button>
+          ) : null}
         </div>
       ) : null}
 

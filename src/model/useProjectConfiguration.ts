@@ -4,12 +4,14 @@ import type {
   ConditionPolicy,
   CustomCommandSignature,
   ProjectFilePath,
+  ViewInputMode,
 } from '@preptex/core';
 import type { FilesMap } from '../types/files';
 
 export interface ProjectConfigurationState {
   readonly entryPath: ProjectFilePath | null;
   readonly traversal: 'project' | 'file-only';
+  readonly inputs: ViewInputMode;
   readonly conditionPolicy: ConditionPolicy;
   readonly customCommands: readonly CustomCommandSignature[];
   readonly coarseTreeOptions: CoarseTreeOptions;
@@ -19,6 +21,7 @@ export interface ProjectConfigurationState {
 export const DEFAULT_CONFIGURATION: ProjectConfigurationState = {
   entryPath: null,
   traversal: 'project',
+  inputs: 'command',
   conditionPolicy: { mode: 'source' },
   customCommands: [],
   coarseTreeOptions: {},
@@ -69,6 +72,15 @@ export function useProjectConfiguration(
     setState((prev) => ({
       ...prev,
       traversal,
+      revision: prev.revision + 1,
+    }));
+  }, []);
+
+  const setInputMode = useCallback((inputs: ViewInputMode) => {
+    setState((prev) => ({
+      ...prev,
+      inputs,
+      traversal: inputs === 'command' ? prev.traversal : 'project',
       revision: prev.revision + 1,
     }));
   }, []);
@@ -160,6 +172,7 @@ export function useProjectConfiguration(
     ...state,
     setEntryPath,
     setTraversal,
+    setInputMode,
     setConditionPolicy,
     upsertCustomCommand,
     removeCustomCommand,

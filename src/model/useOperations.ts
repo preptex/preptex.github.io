@@ -8,6 +8,7 @@ import type {
   GeneratedArtifact,
   OperationCapability,
   ProjectEditPlan,
+  ProjectIssue,
   ProjectSnapshot as CoreProjectSnapshot,
   ProjectView,
   TransformationRequest,
@@ -39,6 +40,7 @@ export interface OperationState {
   readonly transformationRunning: boolean;
   readonly transformationResult: TransformationResult | null;
   readonly transformationError: ProcessingError | null;
+  readonly transformationIssues: readonly ProjectIssue[];
   readonly pendingEditPlan: ProjectEditPlan | null;
   readonly artifacts: readonly GeneratedArtifact[];
   readonly editPlanSnapshotId: string | null;
@@ -62,6 +64,7 @@ export function useOperations(
     transformationRunning: false,
     transformationResult: null,
     transformationError: null,
+    transformationIssues: [],
     pendingEditPlan: null,
     artifacts: [],
     editPlanSnapshotId: null,
@@ -226,6 +229,7 @@ export function useOperations(
             conditionRealizationSnapshotId: snapshot.id,
             pendingEditPlan: realized.editPlan,
             artifacts: realized.artifacts,
+            transformationIssues: realized.coverage.issues,
             editPlanSnapshotId: snapshot.id,
             editPlanViewId: null,
             transformationError: null,
@@ -239,6 +243,7 @@ export function useOperations(
           conditionRealization: realized,
           conditionRealizationSnapshotId: snapshot.id,
           artifacts: realized.artifacts,
+          transformationIssues: realized.coverage.issues,
           transformationError: null,
         }));
         return realized;
@@ -272,7 +277,9 @@ export function useOperations(
     const isSourceTarget =
       (request.operation === 'suppress-comments' && request.options?.target === 'source') ||
       (request.operation === 'remove-environments' && request.options.target === 'source') ||
-      (request.operation === 'refactor-symbols' && request.options.target === 'source');
+      (request.operation === 'refactor-symbols' && request.options.target === 'source') ||
+      (request.operation === 'expand-inputs' &&
+        (request.options.target === 'source' || request.options.target === 'artifact'));
 
     if (isSourceTarget) {
       if (!snapshot) {
@@ -332,11 +339,13 @@ export function useOperations(
       request.operation === 'realize-conditions' ||
       (request.operation === 'suppress-comments' && request.options?.target === 'source') ||
       (request.operation === 'remove-environments' && request.options.target === 'source') ||
-      (request.operation === 'refactor-symbols' && request.options.target === 'source');
+      (request.operation === 'refactor-symbols' && request.options.target === 'source') ||
+      (request.operation === 'expand-inputs' && request.options.target === 'source');
     const isFlexibleModel =
       request.operation === 'refactor-symbols' ||
       request.operation === 'compose-transformations' ||
-      request.operation === 'export-project';
+      request.operation === 'export-project' ||
+      (request.operation === 'expand-inputs' && request.options.target === 'artifact');
     const readyView = view?.status === 'ready' ? view : null;
     const effectiveRequest: TransformationRequest =
       request.operation === 'refactor-symbols' && !readyView && request.options.target !== 'artifact'
@@ -357,6 +366,7 @@ export function useOperations(
         transformationResult: result,
         pendingEditPlan: result.editPlan,
         artifacts: result.artifacts,
+        transformationIssues: result.coverage.issues,
         editPlanSnapshotId: snapshot?.id ?? null,
         editPlanViewId: model.kind === 'view' ? model.id : null,
         transformationError: null,
@@ -381,7 +391,7 @@ export function useOperations(
       if (step.operation === 'suppress-comments' || step.operation === 'remove-environments') {
         return step.options?.target !== 'source';
       }
-      if (step.operation === 'refactor-symbols') {
+      if (step.operation === 'refactor-symbols' || step.operation === 'expand-inputs') {
         return step.options.target === 'selected' || step.options.target === 'artifact';
       }
       return false;
@@ -400,6 +410,7 @@ export function useOperations(
         transformationResult: result,
         pendingEditPlan: result.editPlan,
         artifacts: result.artifacts,
+        transformationIssues: result.coverage.issues,
         editPlanSnapshotId: snapshot?.id ?? null,
         editPlanViewId: result.editPlan?.provenance.viewId ?? null,
         transformationError: null,
@@ -466,6 +477,7 @@ export function useOperations(
       transformationResult: null,
       pendingEditPlan: null,
       transformationError: null,
+      transformationIssues: [],
       editPlanSnapshotId: null,
       editPlanViewId: null,
     }));

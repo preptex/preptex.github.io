@@ -17,6 +17,8 @@ import type { AstStructureMode } from './components/astview/ASTview';
 import { ProjectSetupDialog } from './components/ProjectSetupDialog';
 import { EditPreviewDialog } from './components/EditPreviewDialog';
 import { NodeActionBar } from './components/NodeActionBar';
+import type { UnifiedTransformRequest } from './components/ControlPanel';
+import { buildNewFileOutputs, normalizeOutputFolder } from './utils/transformOutput';
 import { useFiles } from './model/useFiles';
 import { useControl } from './model/useControl';
 import { recommendEntry, useProjectConfiguration } from './model/useProjectConfiguration';
@@ -29,6 +31,7 @@ import type {
   CompositeStepRequest,
   ConfiguredNode,
   GeneratedArtifact,
+  ProjectIssue,
   SourceLocation,
   SymbolRefactorAction,
 } from '@preptex/core';
@@ -52,6 +55,8 @@ function getOperationHistoryLabel(operation: string | undefined): string {
       return 'Comment suppression';
     case 'remove-environments':
       return 'Remove environments';
+    case 'expand-inputs':
+      return 'Expand / flatten inputs';
     case 'compose-transformations':
       return 'Composed pipeline';
     case 'edit-nodes':
@@ -139,6 +144,8 @@ function App() {
     selectedFile,
     selectFile,
     uploadError,
+    uploadNotice,
+    clearUploadNotice,
     upsertFiles,
     upsertFileItems,
     upsertTextFiles,
@@ -169,6 +176,7 @@ function App() {
     projectConfig.commitConfiguration({
       entryPath: 'main.tex',
       traversal: 'project',
+      inputs: 'command',
       conditionPolicy: { mode: 'ignore' },
     });
     setSelectedArtifact(null);
@@ -224,6 +232,8 @@ function App() {
   const displayedFilename = selectedArtifact ? selectedArtifact.path : selectedFile;
   const displayedCode = selectedArtifact ? selectedArtifact.source : code;
   const effectiveEntry = projectConfig.entryPath || selectedFile;
+  const effectiveTransformTraversal: 'project' | 'file-only' =
+    projectConfig.inputs === 'command' ? 'file-only' : 'project';
 
   const rootNode: LayoutNode | null = useMemo(() => {
     if (structureMode === 'coarse') {
@@ -282,12 +292,22 @@ function App() {
         operation: 'refactor-symbols',
         options: {
           target,
+          ...(target === 'source' && effectiveEntry
+            ? { entryPath: effectiveEntry, traversal: effectiveTransformTraversal }
+            : {}),
           actions: [action],
         },
       });
       stageEditPlanIfPresent(Boolean(res?.editPlan));
     },
-    [operations, projectConfig.conditionPolicy.mode, projectModel.view?.status, stageEditPlanIfPresent],
+    [
+      effectiveEntry,
+      effectiveTransformTraversal,
+      operations,
+      projectConfig.conditionPolicy.mode,
+      projectModel.view?.status,
+      stageEditPlanIfPresent,
+    ],
   );
 
   const onDownload = (name: string) => {
@@ -320,26 +340,21 @@ function App() {
     }
   };
 
-  const realizePolicy =
-    projectConfig.conditionPolicy.mode === 'none' || projectConfig.conditionPolicy.mode === 'ignore'
-      ? ({ mode: 'source' } as const)
-      : projectConfig.conditionPolicy;
+  const realizePolicy = useMemo(
+    () =>
+      projectConfig.conditionPolicy.mode === 'none' ||
+      projectConfig.conditionPolicy.mode === 'ignore'
+        ? ({ mode: 'source' } as const)
+        : projectConfig.conditionPolicy,
+    [projectConfig.conditionPolicy],
+  );
 
   const realizeCapability = operations.checkConditionRealizationCapability({
     ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
-    traversal: projectConfig.traversal,
+    traversal: effectiveTransformTraversal,
     conditions: realizePolicy,
     inputs: 'preserve',
     stripDeclarationsAndSetters: options.stripDeclarationsAndSetters,
-  });
-
-  const exportCapability = operations.checkTransformationCapability({
-    operation: 'export-project',
-    options: {
-      inputs: options.inputHandling,
-      suppressComments: options.suppressComments,
-      suppressCommentEnvironments: options.suppressCommentEnvironments,
-    },
   });
 
   const viewBlockedReason = projectModel.viewIssue
@@ -353,8 +368,268 @@ function App() {
       ? operations.conditionRealization.decisions
       : projectModel.view?.decisions ?? [];
 
+  const mergedDiagnostics = useMemo(() => {
+    const seen = new Set<string>();
+    const combined: ProjectIssue[] = [];
+    for (const issue of [...projectModel.issues, ...operations.transformationIssues]) {
+      const key = `${issue.code}:${issue.location?.path ?? ''}:${issue.location?.range.start ?? ''}:${issue.message}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      combined.push(issue);
+    }
+    return combined;
+  }, [projectModel.issues, operations.transformationIssues]);
+
+  const inputWarnings = useMemo(
+    () => mergedDiagnostics.filter((issue) => issue.code === 'missing-input'),
+    [mergedDiagnostics],
+  );
+
   const findingsCount = operations.result?.findings.length ?? 0;
-  const diagnosticsCount = projectModel.issues.length;
+  const handleApplyTransformations = useCallback(
+    (req: UnifiedTransformRequest) => {
+      const folder = normalizeOutputFolder(req.outputFolder);
+      if (req.destination === 'new-files' && folder === null) {
+        return;
+      }
+
+      const activeCount =
+        Number(req.realizeConditions) +
+        Number(req.suppressComments.enabled) +
+        Number(req.removeEnvironments.enabled && req.removeEnvironments.names.length > 0) +
+        Number(req.expandInputs.enabled);
+
+      if (activeCount === 0) return;
+
+      const emitNewFiles = (
+        artifacts: readonly GeneratedArtifact[],
+        changedPaths: ReadonlySet<string>,
+      ) => {
+        const { files: newFiles, primaryPath } = buildNewFileOutputs({
+          artifacts,
+          existingFiles: filesByName,
+          changedPaths,
+          entryPath: effectiveEntry,
+          outputFolder: req.outputFolder,
+        });
+        const newKeys = Object.keys(newFiles);
+        if (newKeys.length === 0) return;
+        const label =
+          folder && folder.length > 0
+            ? `Transform to ${folder}`
+            : 'Output transformed files';
+        upsertTextFiles(newFiles, { recordHistory: true, label });
+        operations.discardPendingEdits();
+        setSelectedArtifact(null);
+        if (primaryPath) {
+          selectFile(primaryPath);
+        }
+        layout.selectView('code');
+      };
+
+      if (activeCount === 1) {
+        if (req.realizeConditions) {
+          const realized = operations.realizeConditions(
+            {
+              ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
+              traversal: effectiveTransformTraversal,
+              conditions: realizePolicy,
+              inputs: 'preserve',
+              stripDeclarationsAndSetters: req.stripDeclarationsAndSetters,
+            },
+            req.destination === 'inplace' ? 'preview-edits' : 'export-artifacts',
+          );
+          if (!realized) return;
+          if (realized.status !== 'ready') {
+            layout.selectView('diagnostics');
+            return;
+          }
+          if (req.destination === 'inplace') {
+            if (realized.editPlan) {
+              setSwitchToConditionFree(true);
+              layout.selectView('diff');
+            }
+          } else {
+            const changed = new Set((realized.editPlan?.edits ?? []).map((e) => e.path));
+            emitNewFiles(realized.artifacts, changed);
+          }
+          return;
+        }
+
+        if (req.suppressComments.enabled) {
+          const target = req.suppressComments.target;
+          const res = operations.planTransformation({
+            operation: 'suppress-comments',
+            options: {
+              target,
+              ...(target === 'source' && effectiveEntry
+                ? { entryPath: effectiveEntry, traversal: effectiveTransformTraversal }
+                : {}),
+              suppressCommentEnvironments: req.suppressComments.suppressCommentEnvironments,
+            },
+          });
+          if (!res) return;
+          if (req.destination === 'inplace') {
+            stageEditPlanIfPresent(Boolean(res.editPlan));
+          } else {
+            const changed = new Set((res.editPlan?.edits ?? []).map((e) => e.path));
+            emitNewFiles(res.artifacts, changed);
+          }
+          return;
+        }
+
+        if (req.removeEnvironments.enabled && req.removeEnvironments.names.length > 0) {
+          const target = req.removeEnvironments.target;
+          const res = operations.planTransformation({
+            operation: 'remove-environments',
+            options: {
+              target,
+              ...(target === 'source' && effectiveEntry
+                ? { entryPath: effectiveEntry, traversal: effectiveTransformTraversal }
+                : {}),
+              names: req.removeEnvironments.names,
+            },
+          });
+          if (!res) return;
+          if (req.destination === 'inplace') {
+            stageEditPlanIfPresent(Boolean(res.editPlan));
+          } else {
+            const changed = new Set((res.editPlan?.edits ?? []).map((e) => e.path));
+            emitNewFiles(res.artifacts, changed);
+          }
+          return;
+        }
+
+        if (req.expandInputs.enabled) {
+          const target =
+            req.destination === 'new-files' ? 'artifact' : req.expandInputs.target;
+          const res = operations.planTransformation({
+            operation: 'expand-inputs',
+            options: {
+              mode: req.expandInputs.mode,
+              target,
+              ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
+            },
+          });
+          if (!res) return;
+          if (req.destination === 'inplace') {
+            stageEditPlanIfPresent(Boolean(res.editPlan));
+          } else {
+            const changed = new Set((res.editPlan?.edits ?? []).map((e) => e.path));
+            emitNewFiles(res.artifacts, changed);
+          }
+          return;
+        }
+      }
+
+      // Multi-step composed pipeline
+      const steps: CompositeStepRequest[] = [];
+      if (req.realizeConditions) {
+        steps.push({
+          operation: 'realize-conditions',
+          options: {
+            ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
+            traversal: effectiveTransformTraversal,
+            conditions: realizePolicy,
+            inputs: 'preserve',
+            stripDeclarationsAndSetters: req.stripDeclarationsAndSetters,
+          },
+        });
+      }
+      if (req.suppressComments.enabled) {
+        const target = req.realizeConditions ? 'selected' : req.suppressComments.target;
+        steps.push({
+          operation: 'suppress-comments',
+          options: {
+            target,
+            ...(target === 'source' && effectiveEntry
+              ? { entryPath: effectiveEntry, traversal: effectiveTransformTraversal }
+              : {}),
+            suppressCommentEnvironments: req.suppressComments.suppressCommentEnvironments,
+          },
+        });
+      }
+      if (req.removeEnvironments.enabled && req.removeEnvironments.names.length > 0) {
+        const target = req.realizeConditions ? 'selected' : req.removeEnvironments.target;
+        steps.push({
+          operation: 'remove-environments',
+          options: {
+            target,
+            ...(target === 'source' && effectiveEntry
+              ? { entryPath: effectiveEntry, traversal: effectiveTransformTraversal }
+              : {}),
+            names: req.removeEnvironments.names,
+          },
+        });
+      }
+      if (req.expandInputs.enabled) {
+        const target =
+          req.destination === 'new-files'
+            ? 'artifact'
+            : req.realizeConditions
+            ? 'selected'
+            : req.expandInputs.target;
+        steps.push({
+          operation: 'expand-inputs',
+          options: {
+            mode: req.expandInputs.mode,
+            target,
+            ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
+          },
+        });
+      }
+
+      const needsViewConfig =
+        req.realizeConditions ||
+        req.suppressComments.target === 'selected' ||
+        req.removeEnvironments.target === 'selected' ||
+        req.expandInputs.target === 'selected' ||
+        projectConfig.conditionPolicy.mode !== 'ignore';
+
+      const res = operations.planCompositeTransformation({
+        ...(needsViewConfig && effectiveEntry
+          ? {
+              configuration: {
+                entryPath: effectiveEntry,
+                traversal: effectiveTransformTraversal,
+                inputs: projectConfig.inputs,
+                conditions: req.realizeConditions
+                  ? realizePolicy
+                  : projectConfig.conditionPolicy,
+                customCommands: projectConfig.customCommands,
+              },
+            }
+          : {}),
+        steps,
+      });
+      if (!res) return;
+      if (req.destination === 'inplace') {
+        if (req.realizeConditions && res.editPlan) {
+          setSwitchToConditionFree(true);
+        }
+        stageEditPlanIfPresent(Boolean(res.editPlan));
+      } else {
+        const changed = new Set((res.editPlan?.edits ?? []).map((e) => e.path));
+        emitNewFiles(res.artifacts, changed);
+      }
+    },
+    [
+      effectiveEntry,
+      effectiveTransformTraversal,
+      filesByName,
+      layout,
+      operations,
+      projectConfig.conditionPolicy,
+      projectConfig.customCommands,
+      projectConfig.inputs,
+      realizePolicy,
+      selectFile,
+      stageEditPlanIfPresent,
+      upsertTextFiles,
+    ],
+  );
+
+  const diagnosticsCount = mergedDiagnostics.length;
   const totalDiagnosticCount =
     diagnosticsCount +
     findingsCount +
@@ -488,6 +763,9 @@ function App() {
         onChangeStructureMode={setStructureMode}
         isConfiguredAvailable={projectModel.view?.status === 'ready'}
         viewIssue={projectModel.viewIssue}
+        inputMode={projectConfig.inputs}
+        onChangeInputMode={projectConfig.setInputMode}
+        inputWarnings={inputWarnings}
         coarseOptions={projectConfig.coarseTreeOptions}
         onChangeCoarseOptions={projectConfig.setCoarseTreeOptions}
         hasConditionals={projectModel.hasConditionals}
@@ -566,138 +844,9 @@ function App() {
             canRealizeConditions={Boolean(projectModel.snapshot) && realizeCapability.eligible}
             realizeConditionsReason={realizeCapability.reasons[0]?.message}
             conditionDecisions={activeDecisions}
-            onRealizeConditions={(mode, inputs) => {
-              const realized = operations.realizeConditions(
-                {
-                  ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
-                  traversal: projectConfig.traversal,
-                  conditions: realizePolicy,
-                  inputs,
-                  stripDeclarationsAndSetters: options.stripDeclarationsAndSetters,
-                },
-                mode,
-              );
-              if (!realized) return;
-              if (realized.status !== 'ready') {
-                layout.selectView('diagnostics');
-                return;
-              }
-              if (mode === 'preview-edits' && realized.editPlan) {
-                setSwitchToConditionFree(true);
-                layout.selectView('diff');
-              }
-            }}
-            onRunReferences={() => {
-              operations.runReferences();
-              layout.selectView('diagnostics');
-            }}
-            canRunReferences={operations.checkReferencesCapability().eligible}
-            referencesReason={operations.checkReferencesCapability().reasons[0]?.message}
-            onRunCommandUsage={() => {
-              operations.runCommandUsage();
-              layout.selectView('diagnostics');
-            }}
-            canRunCommandUsage={operations.checkCommandUsageCapability().eligible}
-            commandUsageReason={operations.checkCommandUsageCapability().reasons[0]?.message}
-            isAnalyzing={operations.running}
             canRunViewTransformations={projectModel.view?.status === 'ready'}
             viewTransformationReason={viewBlockedReason}
-            onPreviewCommentSuppression={(suppressCommentEnvironments, target = 'selected') => {
-              const res = operations.planTransformation({
-                operation: 'suppress-comments',
-                options: {
-                  target,
-                  suppressCommentEnvironments,
-                },
-              });
-              stageEditPlanIfPresent(Boolean(res?.editPlan));
-            }}
-            onPreviewRemoveEnvironments={(names, target) => {
-              const res = operations.planTransformation({
-                operation: 'remove-environments',
-                options: {
-                  target,
-                  names,
-                },
-              });
-              if (target !== 'artifact') {
-                stageEditPlanIfPresent(Boolean(res?.editPlan));
-              }
-            }}
-            onExportProject={() => {
-              operations.planTransformation({
-                operation: 'export-project',
-                options: {
-                  inputs: options.inputHandling,
-                  suppressComments: options.suppressComments,
-                  suppressCommentEnvironments: options.suppressCommentEnvironments,
-                },
-              });
-            }}
-            canExportProject={exportCapability.eligible}
-            exportReason={exportCapability.reasons[0]?.message || viewBlockedReason}
-            canComposePipeline={Boolean(projectModel.snapshot && effectiveEntry)}
-            onRunCompositePipeline={(cfg) => {
-              const useSourceTarget =
-                projectConfig.conditionPolicy.mode === 'ignore' && !cfg.realizeConditions;
-              const stepTarget = useSourceTarget ? 'source' : 'selected';
-              const steps: CompositeStepRequest[] = [];
-              if (cfg.realizeConditions) {
-                steps.push({
-                  operation: 'realize-conditions',
-                  options: {
-                    ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
-                    traversal: projectConfig.traversal,
-                    conditions: realizePolicy,
-                    inputs: cfg.finalExport ? 'inline' : 'preserve',
-                    stripDeclarationsAndSetters: options.stripDeclarationsAndSetters,
-                  },
-                });
-              }
-              if (cfg.suppressComments) {
-                steps.push({
-                  operation: 'suppress-comments',
-                  options: {
-                    target: stepTarget,
-                    suppressCommentEnvironments: cfg.suppressCommentEnvironments,
-                  },
-                });
-              }
-              if (cfg.removeEnvironments.length > 0) {
-                steps.push({
-                  operation: 'remove-environments',
-                  options: {
-                    target: stepTarget,
-                    names: cfg.removeEnvironments,
-                  },
-                });
-              }
-              if (cfg.finalExport) {
-                steps.push({
-                  operation: 'export-project',
-                  options: {
-                    inputs: options.inputHandling,
-                    suppressComments: cfg.suppressComments,
-                    suppressCommentEnvironments: cfg.suppressCommentEnvironments,
-                  },
-                });
-              }
-              if (steps.length === 0) return;
-              const res = operations.planCompositeTransformation({
-                ...(useSourceTarget
-                  ? {}
-                  : {
-                      configuration: {
-                        entryPath: effectiveEntry,
-                        traversal: projectConfig.traversal,
-                        conditions: cfg.realizeConditions ? realizePolicy : projectConfig.conditionPolicy,
-                        customCommands: projectConfig.customCommands,
-                      },
-                    }),
-                steps,
-              });
-              stageEditPlanIfPresent(Boolean(res?.editPlan));
-            }}
+            onApplyTransformations={handleApplyTransformations}
             artifacts={operations.artifacts}
             onDownloadZip={() => {
               if (operations.artifacts.length > 0) {
@@ -753,14 +902,16 @@ function App() {
             variant="view"
             isOpen={true}
             onClose={() => layout.selectView('code')}
-            diagnostics={projectModel.issues}
+            diagnostics={mergedDiagnostics}
             error={projectModel.error || operations.error || operations.transformationError}
             findings={operations.result?.findings}
             isStale={operations.isStale}
             onRunReferences={() => operations.runReferences()}
             canRunReferences={operations.checkReferencesCapability().eligible}
+            referencesReason={operations.checkReferencesCapability().reasons[0]?.message}
             onRunCommandUsage={() => operations.runCommandUsage()}
             canRunCommandUsage={operations.checkCommandUsageCapability().eligible}
+            commandUsageReason={operations.checkCommandUsageCapability().reasons[0]?.message}
             isAnalyzing={operations.running}
             onSelectLocation={jumpToAnalysisLocation}
           />
@@ -877,7 +1028,6 @@ function App() {
           setNewFileTrigger((c) => c + 1);
         }}
         onLoadDemo={loadDemoProject}
-        onOpenExport={() => layout.selectView('transformations')}
         onDownloadProjectZip={() => {
           const entries = Object.entries(filesByName).map(([path, content]) => ({ path, content }));
           if (entries.length > 0) {
@@ -899,6 +1049,19 @@ function App() {
       />
 
       <div className="WorkspaceMainRow">
+        {layout.sidebarCollapsed ? (
+          <div className="WorkspaceCollapsedRail">
+            <button
+              type="button"
+              className="WorkspaceCollapsedRailBtn"
+              onClick={layout.toggleSidebar}
+              aria-label="Show file explorer"
+              title="Show file explorer"
+            >
+              »
+            </button>
+          </div>
+        ) : null}
         <aside
           className={`WorkspaceSidebar${layout.sidebarCollapsed ? ' is-collapsed' : ''}`}
           aria-hidden={layout.sidebarCollapsed}
@@ -915,13 +1078,19 @@ function App() {
             onUploadFiles={(fl) => {
               void upsertFiles(fl);
             }}
+            onUploadFolder={(fl) => {
+              void upsertFiles(fl, { filterExtensions: true });
+            }}
             onDropFiles={(items) => {
               void upsertFileItems(items);
             }}
             uploadError={uploadError}
+            uploadNotice={uploadNotice}
+            onDismissUploadNotice={clearUploadNotice}
             uploadFilesTrigger={uploadFilesTrigger}
             uploadFolderTrigger={uploadFolderTrigger}
             newFileTrigger={newFileTrigger}
+            onCollapseSidebar={layout.toggleSidebar}
           />
         </aside>
 

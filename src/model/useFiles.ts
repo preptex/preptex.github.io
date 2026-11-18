@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useReducer } from 'react';
 import type { ProjectFilePath } from '@preptex/core';
 import type { FilesMap } from '../types/files';
+import { filterUploadedBatch } from '../utils/fileFilter';
 
 export interface FileHistoryEntry {
   readonly filesByName: FilesMap;
@@ -14,6 +15,7 @@ export interface FilesState {
   readonly sourceRevision: number;
   readonly selectedFile: ProjectFilePath;
   readonly uploadError: string | null;
+  readonly uploadNotice: string | null;
   readonly past: readonly FileHistoryEntry[];
   readonly future: readonly FileHistoryEntry[];
 }
@@ -21,6 +23,10 @@ export interface FilesState {
 export interface UpsertTextOptions {
   readonly recordHistory?: boolean;
   readonly label?: string;
+}
+
+export interface UpsertFilesOptions {
+  readonly filterExtensions?: boolean;
 }
 
 const MAX_HISTORY_ENTRIES = 50;
@@ -32,12 +38,14 @@ type FilesAction =
       readonly files: FilesMap;
       readonly recordHistory?: boolean;
       readonly label?: string;
+      readonly notice?: string | null;
     }
   | { readonly type: 'remove'; readonly path: ProjectFilePath }
   | { readonly type: 'undo' }
   | { readonly type: 'redo' }
   | { readonly type: 'reset' }
-  | { readonly type: 'upload-error'; readonly message: string };
+  | { readonly type: 'upload-error'; readonly message: string }
+  | { readonly type: 'clear-upload-notice' };
 
 export function normalizeUploadedBatch(incoming: FilesMap, existing: FilesMap): FilesMap {
   const cleanedEntries: [string, string][] = [];
@@ -90,6 +98,7 @@ function restoreSnapshot(
     sourceRevision: state.sourceRevision + 1,
     selectedFile,
     uploadError: null,
+    uploadNotice: null,
     past: nextPast,
     future: nextFuture,
   };
@@ -106,7 +115,9 @@ function filesReducer(state: FilesState, action: FilesAction): FilesState {
         ([path, src]) => state.filesByName[path] !== src,
       );
       if (changed.length === 0 && Object.keys(action.files).length > 0) {
-        return state;
+        return action.notice !== undefined
+          ? { ...state, uploadError: null, uploadNotice: action.notice }
+          : state;
       }
       const filesByName = { ...state.filesByName, ...action.files };
       const nextFileVersions = { ...state.fileVersions };
@@ -131,6 +142,7 @@ function filesReducer(state: FilesState, action: FilesAction): FilesState {
         sourceRevision: state.sourceRevision + 1,
         selectedFile: state.selectedFile || Object.keys(filesByName)[0] || '',
         uploadError: null,
+        uploadNotice: action.notice ?? null,
         past,
         future,
       };
@@ -154,6 +166,7 @@ function filesReducer(state: FilesState, action: FilesAction): FilesState {
             ? Object.keys(filesByName)[0] ?? ''
             : state.selectedFile,
         uploadError: null,
+        uploadNotice: null,
         past: state.past,
         future: state.future,
       };
@@ -197,11 +210,14 @@ function filesReducer(state: FilesState, action: FilesAction): FilesState {
         sourceRevision: state.sourceRevision + 1,
         selectedFile: '',
         uploadError: null,
+        uploadNotice: null,
         past: [],
         future: [],
       };
     case 'upload-error':
-      return { ...state, uploadError: action.message };
+      return { ...state, uploadError: action.message, uploadNotice: null };
+    case 'clear-upload-notice':
+      return { ...state, uploadNotice: null };
   }
 }
 
@@ -234,6 +250,7 @@ export function useFiles(initial: FilesMap = {}) {
       sourceRevision: 1,
       selectedFile: Object.keys(files)[0] ?? '',
       uploadError: null,
+      uploadNotice: null,
       past: [],
       future: [],
     };
@@ -245,6 +262,7 @@ export function useFiles(initial: FilesMap = {}) {
   const resetFiles = useCallback(() => dispatch({ type: 'reset' }), []);
   const goBack = useCallback(() => dispatch({ type: 'undo' }), []);
   const goForward = useCallback(() => dispatch({ type: 'redo' }), []);
+  const clearUploadNotice = useCallback(() => dispatch({ type: 'clear-upload-notice' }), []);
 
   const upsertTextFiles = useCallback((files: FilesMap, options?: UpsertTextOptions) => {
     dispatch({
@@ -256,11 +274,37 @@ export function useFiles(initial: FilesMap = {}) {
   }, []);
 
   const upsertFiles = useCallback(
-    async (fileList: FileList | readonly File[]): Promise<void> => {
+    async (fileList: FileList | readonly File[], options?: UpsertFilesOptions): Promise<void> => {
       try {
-        const entries = await Promise.all(Array.from(fileList).map((f) => readTextFile(f)));
+        const rawFiles = Array.from(fileList);
+        const shouldFilter =
+          Boolean(options?.filterExtensions) ||
+          rawFiles.some((f) => Boolean(f.webkitRelativePath && f.webkitRelativePath.includes('/')));
+
+        let filesToRead: readonly File[] = rawFiles;
+        let notice: string | null = null;
+        if (shouldFilter && rawFiles.length > 0) {
+          const filtered = filterUploadedBatch(
+            rawFiles,
+            (f) => (f.webkitRelativePath || f.name).replace(/\\/g, '/'),
+          );
+          filesToRead = filtered.accepted;
+          if (filesToRead.length === 0) {
+            dispatch({
+              type: 'upload-error',
+              message:
+                'No supported TeX files (.tex, .cls, .sty, .bib, ...) found in the selected folder.',
+            });
+            return;
+          }
+          if (filtered.skippedCount > 0) {
+            notice = `Imported ${filesToRead.length} TeX project file${filesToRead.length === 1 ? '' : 's'} (skipped ${filtered.skippedCount} non-TeX file${filtered.skippedCount === 1 ? '' : 's'}).`;
+          }
+        }
+
+        const entries = await Promise.all(filesToRead.map((f) => readTextFile(f)));
         const normalized = normalizeUploadedBatch(Object.fromEntries(entries), state.filesByName);
-        dispatch({ type: 'upsert', files: normalized });
+        dispatch({ type: 'upsert', files: normalized, notice });
       } catch (error: unknown) {
         dispatch({
           type: 'upload-error',
@@ -272,13 +316,40 @@ export function useFiles(initial: FilesMap = {}) {
   );
 
   const upsertFileItems = useCallback(
-    async (items: ReadonlyArray<{ readonly file: File; readonly relativePath: string }>): Promise<void> => {
+    async (
+      items: ReadonlyArray<{
+        readonly file: File;
+        readonly relativePath: string;
+        readonly fromDirectory?: boolean;
+      }>,
+    ): Promise<void> => {
       try {
+        const dirItems = items.filter((item) => item.fromDirectory);
+        const directItems = items.filter((item) => !item.fromDirectory);
+        let itemsToRead = items;
+        let notice: string | null = null;
+
+        if (dirItems.length > 0) {
+          const filtered = filterUploadedBatch(dirItems, (item) => item.relativePath);
+          itemsToRead = [...directItems, ...filtered.accepted];
+          if (itemsToRead.length === 0) {
+            dispatch({
+              type: 'upload-error',
+              message:
+                'No supported TeX files (.tex, .cls, .sty, .bib, ...) found in the dropped folder.',
+            });
+            return;
+          }
+          if (filtered.skippedCount > 0) {
+            notice = `Imported ${itemsToRead.length} TeX project file${itemsToRead.length === 1 ? '' : 's'} (skipped ${filtered.skippedCount} non-TeX file${filtered.skippedCount === 1 ? '' : 's'}).`;
+          }
+        }
+
         const entries = await Promise.all(
-          items.map(({ file, relativePath }) => readTextFile(file, relativePath)),
+          itemsToRead.map(({ file, relativePath }) => readTextFile(file, relativePath)),
         );
         const normalized = normalizeUploadedBatch(Object.fromEntries(entries), state.filesByName);
-        dispatch({ type: 'upsert', files: normalized });
+        dispatch({ type: 'upsert', files: normalized, notice });
       } catch (error: unknown) {
         dispatch({
           type: 'upload-error',
@@ -302,6 +373,7 @@ export function useFiles(initial: FilesMap = {}) {
     upsertTextFiles,
     removeFile,
     resetFiles,
+    clearUploadNotice,
     goBack,
     goForward,
   } as const;
