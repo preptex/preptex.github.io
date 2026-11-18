@@ -32,8 +32,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Verify @preptex/core is not locally linked
-        run: npm run check:core-link
+      - name: Verify @preptex/core and @preptex/ui are not locally linked
+        run: npm run check:core-link && npm run check:ui-link
 
       - name: Install dependencies
         run: npm ci
@@ -78,8 +78,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Verify @preptex/core is not locally linked
-        run: npm run check:core-link
+      - name: Verify @preptex/core and @preptex/ui are not locally linked
+        run: npm run check:core-link && npm run check:ui-link
 
       - name: Install dependencies
         run: npm ci

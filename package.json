@@ -7,6 +7,7 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.39.4",
     "@preptex/core": "^0.6.2",
+    "@preptex/ui": "0.1.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
@@ -36,6 +37,11 @@
     "core:unlink": "node scripts/core-link.mjs unlink",
     "core:status": "node scripts/core-link.mjs status",
     "check:core-link": "node scripts/core-link.mjs check",
+    "ui:build": "node scripts/ui-link.mjs build",
+    "ui:link": "node scripts/ui-link.mjs link",
+    "ui:unlink": "node scripts/ui-link.mjs unlink",
+    "ui:status": "node scripts/ui-link.mjs status",
+    "check:ui-link": "node scripts/ui-link.mjs check",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
@@ -49,7 +55,7 @@
   },
   "jest": {
     "transformIgnorePatterns": [
-      "node_modules/(?!(@preptex/core|@marijn/find-cluster-break)/)"
+      "node_modules/(?!(@preptex/(?:core|ui)|@marijn/find-cluster-break)/)"
     ]
   },
   "browserslist": {

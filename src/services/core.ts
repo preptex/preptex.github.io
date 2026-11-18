@@ -288,3 +288,161 @@ export function planCompositeTransformationAdapter(
 ): TransformationResult {
   return planCompositeTransformation(model, request);
 }
+
+function isSurrogateSplit(source: string, pos: number): boolean {
+  if (pos <= 0 || pos >= source.length) return false;
+  const prev = source.charCodeAt(pos - 1);
+  const next = source.charCodeAt(pos);
+  return prev >= 0xd800 && prev <= 0xdbff && next >= 0xdc00 && next <= 0xdfff;
+}
+
+export function applyExternalProjectEditPlanAdapter(
+  snapshot: CoreProjectSnapshot,
+  plan: ProjectEditPlan,
+  view?: ProjectView,
+):
+  | { readonly ok: true; readonly files: Readonly<Record<string, string>> }
+  | { readonly ok: false; readonly error: ProcessingError } {
+  if (plan.provenance.snapshotId !== snapshot.id) {
+    return {
+      ok: false,
+      error: {
+        kind: 'core',
+        code: PrepTexErrorCode.EditConflict,
+        message: 'The edit plan belongs to a different source snapshot.',
+      },
+    };
+  }
+  if (plan.provenance.viewId !== null && (!view || view.id !== plan.provenance.viewId)) {
+    return {
+      ok: false,
+      error: {
+        kind: 'core',
+        code: PrepTexErrorCode.EditConflict,
+        message: 'The edit plan belongs to a different configured view.',
+      },
+    };
+  }
+
+  const fileMap = new Map(snapshot.files.map((file) => [file.path, file.source]));
+  const editsByPath = new Map<string, (typeof plan.edits)[number][]>();
+  let previousPath = '';
+  let previousEnd = -1;
+  let previousInsertion = false;
+
+  for (const edit of plan.edits) {
+    const source = fileMap.get(edit.path);
+    if (source === undefined) {
+      return {
+        ok: false,
+        error: {
+          kind: 'core',
+          code: PrepTexErrorCode.InvalidArgument,
+          message: `An edit targets absent file "${edit.path}".`,
+        },
+      };
+    }
+
+    let start: number;
+    let end: number;
+    if (edit.kind === 'insert') {
+      if (!Number.isSafeInteger(edit.offset) || edit.offset < 0 || edit.offset > source.length) {
+        return {
+          ok: false,
+          error: {
+            kind: 'core',
+            code: PrepTexErrorCode.InvalidArgument,
+            message: `Invalid insertion offset in "${edit.path}".`,
+          },
+        };
+      }
+      start = edit.offset;
+      end = edit.offset;
+    } else {
+      if (
+        !Number.isSafeInteger(edit.range.start) ||
+        !Number.isSafeInteger(edit.range.end) ||
+        edit.range.start < 0 ||
+        edit.range.end < edit.range.start ||
+        edit.range.end + 1 > source.length
+      ) {
+        return {
+          ok: false,
+          error: {
+            kind: 'core',
+            code: PrepTexErrorCode.InvalidArgument,
+            message: `Invalid replacement range in "${edit.path}".`,
+          },
+        };
+      }
+      start = edit.range.start;
+      end = edit.range.end + 1;
+      if (source.slice(start, end) !== edit.expected) {
+        return {
+          ok: false,
+          error: {
+            kind: 'core',
+            code: PrepTexErrorCode.EditConflict,
+            message: `Edit expected contents do not match "${edit.path}".`,
+          },
+        };
+      }
+    }
+
+    if (isSurrogateSplit(source, start) || isSurrogateSplit(source, end)) {
+      return {
+        ok: false,
+        error: {
+          kind: 'core',
+          code: PrepTexErrorCode.InvalidArgument,
+          message: `Edit boundary splits a UTF-16 surrogate pair in "${edit.path}".`,
+        },
+      };
+    }
+
+    if (
+      edit.path < previousPath ||
+      (edit.path === previousPath &&
+        (start < previousEnd || (start === previousEnd && previousInsertion)))
+    ) {
+      return {
+        ok: false,
+        error: {
+          kind: 'core',
+          code: PrepTexErrorCode.InvalidArgument,
+          message: 'Edits must be ordered and nonoverlapping.',
+        },
+      };
+    }
+
+    previousPath = edit.path;
+    previousEnd = end;
+    previousInsertion = edit.kind === 'insert';
+
+    const list = editsByPath.get(edit.path) ?? [];
+    list.push(edit);
+    editsByPath.set(edit.path, list);
+  }
+
+  const updatedFiles: Record<string, string> = {};
+  for (const file of snapshot.files) {
+    const fileEdits = editsByPath.get(file.path);
+    if (!fileEdits || fileEdits.length === 0) {
+      updatedFiles[file.path] = file.source;
+      continue;
+    }
+    let pos = 0;
+    const chunks: string[] = [];
+    for (const edit of fileEdits) {
+      const start = edit.kind === 'replace' ? edit.range.start : edit.offset;
+      const end = edit.kind === 'replace' ? edit.range.end + 1 : edit.offset;
+      const text = edit.kind === 'replace' ? edit.replacement : edit.text;
+      chunks.push(file.source.slice(pos, start), text);
+      pos = end;
+    }
+    chunks.push(file.source.slice(pos));
+    updatedFiles[file.path] = chunks.join('');
+  }
+
+  return { ok: true, files: updatedFiles };
+}

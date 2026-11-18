@@ -28,3 +28,6 @@ yarn-error.log*
 
 # local @preptex/core linking state
 /.local-core-state.json
+
+# local @preptex/ui linking state
+/.local-ui-state.json

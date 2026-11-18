@@ -15,6 +15,7 @@ import type {
   TransformationResult,
 } from '@preptex/core';
 import {
+  applyExternalProjectEditPlanAdapter,
   applyProjectEditsAdapter,
   checkOperationCapabilityAdapter,
   planCompositeTransformationAdapter,
@@ -25,7 +26,15 @@ import {
   validateProjectEditPlanAdapter,
 } from '../services/core';
 import type { ProcessingError } from '../services/core';
-import type { FilesMap } from '../types/files';
+import type { FilesMap } from '@preptex/ui';
+
+export interface ExternalEditMetadata {
+  readonly title?: string;
+  readonly subtitle?: string;
+  readonly historyLabel?: string;
+  readonly artifacts?: readonly GeneratedArtifact[];
+  readonly issues?: readonly ProjectIssue[];
+}
 
 export interface OperationState {
   readonly running: boolean;
@@ -42,6 +51,8 @@ export interface OperationState {
   readonly transformationError: ProcessingError | null;
   readonly transformationIssues: readonly ProjectIssue[];
   readonly pendingEditPlan: ProjectEditPlan | null;
+  readonly pendingEditMetadata: ExternalEditMetadata | null;
+  readonly pendingEditIsExternal: boolean;
   readonly artifacts: readonly GeneratedArtifact[];
   readonly editPlanSnapshotId: string | null;
   readonly editPlanViewId: string | null;
@@ -66,6 +77,8 @@ export function useOperations(
     transformationError: null,
     transformationIssues: [],
     pendingEditPlan: null,
+    pendingEditMetadata: null,
+    pendingEditIsExternal: false,
     artifacts: [],
     editPlanSnapshotId: null,
     editPlanViewId: null,
@@ -196,6 +209,8 @@ export function useOperations(
             conditionRealization: realized,
             conditionRealizationSnapshotId: snapshot.id,
             pendingEditPlan: null,
+            pendingEditMetadata: null,
+            pendingEditIsExternal: false,
             transformationError: {
               kind: 'core',
               code: PrepTexErrorCode.OperationUnavailable,
@@ -213,6 +228,8 @@ export function useOperations(
               conditionRealization: realized,
               conditionRealizationSnapshotId: snapshot.id,
               pendingEditPlan: null,
+              pendingEditMetadata: null,
+              pendingEditIsExternal: false,
               artifacts: realized.artifacts,
               transformationError: {
                 kind: 'core',
@@ -228,6 +245,8 @@ export function useOperations(
             conditionRealization: realized,
             conditionRealizationSnapshotId: snapshot.id,
             pendingEditPlan: realized.editPlan,
+            pendingEditMetadata: null,
+            pendingEditIsExternal: false,
             artifacts: realized.artifacts,
             transformationIssues: realized.coverage.issues,
             editPlanSnapshotId: snapshot.id,
@@ -252,6 +271,8 @@ export function useOperations(
           ...prev,
           transformationRunning: false,
           pendingEditPlan: null,
+          pendingEditMetadata: null,
+          pendingEditIsExternal: false,
           transformationError: toProcessingError(err),
         }));
         return null;
@@ -365,6 +386,8 @@ export function useOperations(
         transformationRunning: false,
         transformationResult: result,
         pendingEditPlan: result.editPlan,
+        pendingEditMetadata: null,
+        pendingEditIsExternal: false,
         artifacts: result.artifacts,
         transformationIssues: result.coverage.issues,
         editPlanSnapshotId: snapshot?.id ?? null,
@@ -378,6 +401,8 @@ export function useOperations(
         transformationRunning: false,
         transformationResult: null,
         pendingEditPlan: null,
+        pendingEditMetadata: null,
+        pendingEditIsExternal: false,
         transformationError: toProcessingError(err),
       }));
       return null;
@@ -409,6 +434,8 @@ export function useOperations(
         transformationRunning: false,
         transformationResult: result,
         pendingEditPlan: result.editPlan,
+        pendingEditMetadata: null,
+        pendingEditIsExternal: false,
         artifacts: result.artifacts,
         transformationIssues: result.coverage.issues,
         editPlanSnapshotId: snapshot?.id ?? null,
@@ -422,22 +449,66 @@ export function useOperations(
         transformationRunning: false,
         transformationResult: null,
         pendingEditPlan: null,
+        pendingEditMetadata: null,
+        pendingEditIsExternal: false,
         transformationError: toProcessingError(err),
       }));
       return null;
     }
   }, [snapshot, view]);
 
-  const applyPendingEdits = useCallback((onApplied: (updatedFiles: FilesMap) => void) => {
-    if (!state.pendingEditPlan || !snapshot) return;
+  const stageExternalEditPlan = useCallback(
+    (plan: ProjectEditPlan, metadata?: ExternalEditMetadata) => {
+      setState((prev) => ({
+        ...prev,
+        transformationRunning: false,
+        transformationResult: null,
+        pendingEditPlan: plan,
+        pendingEditMetadata: metadata ?? null,
+        pendingEditIsExternal: true,
+        artifacts: metadata?.artifacts ?? prev.artifacts,
+        transformationIssues: metadata?.issues ?? prev.transformationIssues,
+        editPlanSnapshotId: plan.provenance.snapshotId,
+        editPlanViewId: plan.provenance.viewId,
+        transformationError: null,
+      }));
+    },
+    [],
+  );
+
+  const applyPendingEdits = useCallback((onApplied: (updatedFiles: FilesMap) => void): boolean => {
+    if (!state.pendingEditPlan || !snapshot) return false;
 
     const requiresView = state.pendingEditPlan.provenance.viewId !== null;
     const planView = requiresView ? (view ?? undefined) : undefined;
 
+    if (state.pendingEditIsExternal) {
+      const externalResult = applyExternalProjectEditPlanAdapter(
+        snapshot,
+        state.pendingEditPlan,
+        planView,
+      );
+      if (!externalResult.ok) {
+        setState((prev) => ({ ...prev, transformationError: externalResult.error }));
+        return false;
+      }
+      onApplied(externalResult.files);
+      setState((prev) => ({
+        ...prev,
+        pendingEditPlan: null,
+        pendingEditMetadata: null,
+        pendingEditIsExternal: false,
+        transformationError: null,
+        editPlanSnapshotId: null,
+        editPlanViewId: null,
+      }));
+      return true;
+    }
+
     const validation = validateProjectEditPlanAdapter(snapshot, state.pendingEditPlan, planView);
     if (!validation.eligible) {
       setState((prev) => ({ ...prev, transformationError: validation.error }));
-      return;
+      return false;
     }
 
     try {
@@ -449,22 +520,28 @@ export function useOperations(
       setState((prev) => ({
         ...prev,
         pendingEditPlan: null,
+        pendingEditMetadata: null,
+        pendingEditIsExternal: false,
         transformationError: null,
         editPlanSnapshotId: null,
         editPlanViewId: null,
       }));
+      return true;
     } catch (err: unknown) {
       setState((prev) => ({
         ...prev,
         transformationError: toProcessingError(err),
       }));
+      return false;
     }
-  }, [state.pendingEditPlan, snapshot, view]);
+  }, [state.pendingEditPlan, state.pendingEditIsExternal, snapshot, view]);
 
   const discardPendingEdits = useCallback(() => {
     setState((prev) => ({
       ...prev,
       pendingEditPlan: null,
+      pendingEditMetadata: null,
+      pendingEditIsExternal: false,
       transformationError: null,
       editPlanSnapshotId: null,
       editPlanViewId: null,
@@ -476,6 +553,8 @@ export function useOperations(
       ...prev,
       transformationResult: null,
       pendingEditPlan: null,
+      pendingEditMetadata: null,
+      pendingEditIsExternal: false,
       transformationError: null,
       transformationIssues: [],
       editPlanSnapshotId: null,
@@ -516,6 +595,7 @@ export function useOperations(
     checkTransformationCapability,
     planTransformation,
     planCompositeTransformation,
+    stageExternalEditPlan,
     applyPendingEdits,
     discardPendingEdits,
     clearTransformationResult,

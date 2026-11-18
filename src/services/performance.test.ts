@@ -4,7 +4,7 @@ import {
   resolveProjectViewAdapter,
   runAnalysisAdapter,
 } from './core';
-import { createZipArchive } from './zip';
+import { createZipArchive } from '@preptex/ui';
 
 describe('Phase W7: Performance Budget and Responsiveness Measurement', () => {
   const fileCount = 10;
