@@ -1,7 +1,6 @@
 import { StrictMode } from 'react';
 import { act, renderHook } from '@testing-library/react';
-import { useFiles } from './useFiles';
-import { useProjectConfiguration } from './useProjectConfiguration';
+import { useFiles, useProjectConfiguration } from '@preptex/ui';
 import { useProjectModel } from './useProjectModel';
 import { useOperations } from './useOperations';
 

@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
-import { useFiles } from './useFiles';
-import { useProjectConfiguration } from './useProjectConfiguration';
+import type { ProjectEditPlan } from '@preptex/core';
+import { useFiles, useProjectConfiguration } from '@preptex/ui';
 import { useProjectModel } from './useProjectModel';
 import { useOperations } from './useOperations';
 
@@ -316,5 +316,65 @@ describe('Independent Analysis & Two-Pipeline Operations', () => {
         replacement: expect.stringContaining('% Part comment\nIncluded paragraph'),
       }),
     ]);
+  });
+
+  test('stages external ProjectEditPlan with custom metadata, validates staleness, and applies atomically', () => {
+    const { result } = renderHook(() =>
+      useOperationsTest({
+        'main.tex': '\\documentclass{article}\n\\begin{document}\nHello\n\\end{document}\n',
+      }),
+    );
+
+    const snapshot = result.current.model.snapshot;
+    expect(snapshot).not.toBeNull();
+    if (!snapshot) return;
+
+    const externalPlan: ProjectEditPlan = {
+      kind: 'edits',
+      provenance: {
+        snapshotId: snapshot.id,
+        viewId: null,
+        request: {
+          operation: 'refactor-symbols',
+          options: { target: 'source', actions: [] },
+        },
+        operationVersion: 1,
+      },
+      edits: [
+        {
+          kind: 'replace',
+          path: 'main.tex',
+          range: { line: 1, start: 0, end: 22 },
+          expected: '\\documentclass{article}',
+          replacement: '\\documentclass{neurips_2025}',
+        },
+      ],
+    };
+
+    act(() => {
+      result.current.operations.stageExternalEditPlan(externalPlan, {
+        title: 'Diff Review — Venue Conversion',
+        subtitle: 'Preview NeurIPS preamble adaptation',
+        historyLabel: 'Venue Conversion (NeurIPS)',
+      });
+    });
+
+    expect(result.current.operations.pendingEditPlan).toEqual(externalPlan);
+    expect(result.current.operations.pendingEditMetadata?.title).toBe('Diff Review — Venue Conversion');
+    expect(result.current.operations.isEditPlanStale).toBe(false);
+
+    act(() => {
+      result.current.operations.applyPendingEdits((updatedFiles) => {
+        result.current.files.upsertTextFiles(updatedFiles, {
+          recordHistory: true,
+          label: result.current.operations.pendingEditMetadata?.historyLabel ?? 'External edit',
+        });
+      });
+    });
+
+    expect(result.current.files.filesByName['main.tex']).toContain('\\documentclass{neurips_2025}');
+    expect(result.current.operations.pendingEditPlan).toBeNull();
+    expect(result.current.operations.pendingEditMetadata).toBeNull();
+    expect(result.current.files.backLabel).toBe('Venue Conversion (NeurIPS)');
   });
 });

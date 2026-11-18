@@ -12,8 +12,7 @@ import type {
   ProjectView,
   SourceFile,
 } from '@preptex/core';
-import type { FilesMap } from '../types/files';
-import type { ProjectConfigurationState } from './useProjectConfiguration';
+import type { FilesMap, ProjectConfigurationState } from '@preptex/ui';
 import {
   buildCoarseViewTreeAdapter,
   createProjectSnapshotAdapter,

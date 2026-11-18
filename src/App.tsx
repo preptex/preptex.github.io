@@ -1,276 +1,181 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FilesMap } from './types/files';
-import './App.css';
-
-import {
-  ASTview,
-  CatalogDialog,
-  Codeview,
-  Filetree,
-  LogDialog,
-  MetadataDialog,
-  OperationsDialog,
-  WelcomeEmptyState,
-  WorkspaceHeader,
-} from './components';
-import type { AstStructureMode } from './components/astview/ASTview';
-import { ProjectSetupDialog } from './components/ProjectSetupDialog';
-import { EditPreviewDialog } from './components/EditPreviewDialog';
-import { NodeActionBar } from './components/NodeActionBar';
-import type { UnifiedTransformRequest } from './components/ControlPanel';
-import { buildNewFileOutputs, normalizeOutputFolder } from './utils/transformOutput';
-import { useFiles } from './model/useFiles';
-import { useControl } from './model/useControl';
-import { recommendEntry, useProjectConfiguration } from './model/useProjectConfiguration';
-import { useProjectModel } from './model/useProjectModel';
-import { useOperations } from './model/useOperations';
-import { useWorkspaceLayout } from './model/useWorkspaceLayout';
-import { TreeLayoutBuilder } from './components/astview/treebuilder';
-import type { LayoutNode } from './types/LayoutNode';
+import { useCallback, useMemo } from 'react';
 import type {
   CompositeStepRequest,
   ConfiguredNode,
   GeneratedArtifact,
+  ProjectEditPlan,
+  ProjectFilePath,
   ProjectIssue,
-  SourceLocation,
+  SourceToken,
   SymbolRefactorAction,
 } from '@preptex/core';
-import { selectProjectNodeAdapter, walkConfiguredNodesAdapter } from './services/core';
-import { downloadBlob, downloadZipArchive } from './services/zip';
-
-function normalizeOutputName(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return '';
-  const hasExt = /\.[^./\\]+$/.test(trimmed);
-  return hasExt ? trimmed : `${trimmed}.processed.tex`;
-}
-
-function getOperationHistoryLabel(operation: string | undefined): string {
-  switch (operation) {
-    case 'realize-conditions':
-      return 'Condition realization';
-    case 'refactor-symbols':
-      return 'Symbol refactor';
-    case 'suppress-comments':
-      return 'Comment suppression';
-    case 'remove-environments':
-      return 'Remove environments';
-    case 'expand-inputs':
-      return 'Expand / flatten inputs';
-    case 'compose-transformations':
-      return 'Composed pipeline';
-    case 'edit-nodes':
-      return 'Node edit';
-    default:
-      return 'Transformation';
-  }
-}
-
-const DEMO_PROJECT_FILES: FilesMap = {
-  'main.tex': `\\documentclass[11pt]{article}
-\\usepackage{amsmath}
-\\newcommand{\\highlight}[1]{\\textbf{#1}}
-\\newenvironment{notebox}{\\begin{quote}}{\\end{quote}}
-\\newif\\ifdraft
-\\drafttrue
-\\title[PrepTeX Demo]{PrepTeX Phase 3 Workspace Demo}
-\\author{Narek Bojikian \\and Alex Researcher\\thanks{PrepTeX Lab}}
-\\date{November 2026}
-\\begin{document}
-\\maketitle
-\\begin{abstract}
-A concise summary of the structural TeX workspace.
-\\end{abstract}
-
-% Main section
-\\section{Introduction}\\label{sec:intro}
-This is a \\highlight{sample} document demonstrating PrepTeX processing.
-Undefined call with arguments: \\badge[new]{ready}.
-See Section~\\ref{sec:methods} and work~\\cite{knuth84}.
-
-\\input{intro/history.tex}
-
-\\begin{notebox}
-Editable custom environment content.
-\\end{notebox}
-
-\\ifdraft
-% Draft notes:
-Draft notice: work in progress.
-\\else
-Final published version.
-\\fi
-
-\\begin{comment}
-Internal development comment to remove.
-\\end{comment}
-
-\\section{Methods}\\label{sec:methods}
-Reference to \\ref{sec:missing}.
-\\begin{enumerate}
-\\item First item
-\\item Second item
-\\end{enumerate}
-\\begin{thebibliography}{9}
-\\bibitem{knuth84} Donald Knuth, The TeXbook.
-\\end{thebibliography}
-\\end{document}
-`,
-  'intro/history.tex': `% Historical note in subfolder
-\\subsection{Background}
-Since 1984, \\highlight{TeX} has enabled structured mathematical typesetting across nested project files.
-`,
-};
+import {
+  buildNewFileOutputs,
+  DEFAULT_DEMO_PROJECT_FILES,
+  type FilesMap,
+  normalizeOutputFolder,
+  PrepTeXWorkspace,
+  type SectionCommandName,
+  type StagedEditMetadata,
+  type UnifiedTransformRequest,
+  useControl,
+  useFiles,
+  useProjectConfiguration,
+  useWorkspaceLayout,
+  type WorkspaceActionHandlers,
+  type WorkspaceModelData,
+} from '@preptex/ui';
+import './App.css';
+import { useOperations } from './model/useOperations';
+import { useProjectModel } from './model/useProjectModel';
+import { selectProjectNodeAdapter } from './services/core';
 
 function App() {
-  const [jumpToLine, setJumpToLine] = useState<number | undefined>(undefined);
-  const [jumpRange, setJumpRange] = useState<{ start: number; end: number } | undefined>(undefined);
-  const [jumpToken, setJumpToken] = useState(0);
-  const [structureMode, setStructureMode] = useState<AstStructureMode>('coarse');
-  const hasAutoRecommendedEntryRef = useRef(false);
-
-  const [uploadFilesTrigger, setUploadFilesTrigger] = useState(0);
-  const [uploadFolderTrigger, setUploadFolderTrigger] = useState(0);
-  const [newFileTrigger, setNewFileTrigger] = useState(0);
-
-  const [selectedNode, setSelectedNode] = useState<ConfiguredNode | null>(null);
-  const [switchToConditionFree, setSwitchToConditionFree] = useState(true);
-  const [selectedArtifact, setSelectedArtifact] = useState<GeneratedArtifact | null>(null);
-
-  const {
-    filesByName,
-    fileNames,
-    fileVersions,
-    selectedFile,
-    selectFile,
-    uploadError,
-    uploadNotice,
-    clearUploadNotice,
-    upsertFiles,
-    upsertFileItems,
-    upsertTextFiles,
-    removeFile,
-    resetFiles,
-    sourceRevision,
-    canGoBack,
-    canGoForward,
-    backLabel,
-    forwardLabel,
-    goBack,
-    goForward,
-  } = useFiles();
-
-  const projectConfig = useProjectConfiguration(filesByName, {
-    entryPath: selectedFile || null,
+  const files = useFiles();
+  const projectConfig = useProjectConfiguration(files.filesByName, {
+    entryPath: files.selectedFile || null,
     conditionPolicy: { mode: 'ignore' },
   });
-  const projectModel = useProjectModel(filesByName, sourceRevision, projectConfig, fileVersions);
+  const layout = useWorkspaceLayout();
+  const control = useControl();
+
+  const projectModel = useProjectModel(
+    files.filesByName,
+    files.sourceRevision,
+    projectConfig,
+    files.fileVersions,
+  );
   const operations = useOperations(projectModel.snapshot, projectModel.view);
-  const layout = useWorkspaceLayout('code');
-  const { options, setOptions } = useControl();
 
-  const loadDemoProject = useCallback(() => {
-    hasAutoRecommendedEntryRef.current = true;
-    upsertTextFiles(DEMO_PROJECT_FILES);
-    selectFile('main.tex');
-    projectConfig.commitConfiguration({
-      entryPath: 'main.tex',
-      traversal: 'project',
-      inputs: 'command',
-      conditionPolicy: { mode: 'ignore' },
-    });
-    setSelectedArtifact(null);
-    setSelectedNode(null);
-  }, [projectConfig, selectFile, upsertTextFiles]);
-
-  // Auto-recommend an entry file quietly (without modal popup) when files enter an empty workspace
-  useEffect(() => {
-    if (fileNames.length === 0) {
-      hasAutoRecommendedEntryRef.current = false;
-      return;
-    }
-    if (!hasAutoRecommendedEntryRef.current) {
-      hasAutoRecommendedEntryRef.current = true;
-      if (!projectConfig.entryPath) {
-        const recommended = recommendEntry(filesByName);
-        if (recommended) {
-          projectConfig.setEntryPath(recommended);
-          selectFile(recommended);
-        }
-      }
-    }
-  }, [fileNames.length, filesByName, projectConfig, selectFile]);
-
-  // Demo / State URL parameter support
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const demo = params.get('demo');
-    if (demo === 'sample' && fileNames.length === 0) {
-      loadDemoProject();
-      const state = params.get('state');
-      if (state === 'operations' || state === 'transformations') {
-        layout.selectView('transformations');
-      } else if (state === 'ast') {
-        layout.selectView('ast');
-      } else if (state === 'catalog') {
-        layout.selectView('catalog');
-      } else if (state === 'metadata') {
-        layout.selectView('metadata');
-      } else if (state === 'settings') {
-        layout.selectView('settings');
-      } else if (state === 'log' || state === 'bottom-log' || state === 'diagnostics') {
-        layout.selectView('diagnostics');
-        setTimeout(() => {
-          operations.runReferences();
-        }, 100);
-      }
-    }
-  }, [fileNames.length, loadDemoProject, layout, operations]);
-
-  const code = filesByName[selectedFile] ?? '';
-  const displayedFilename = selectedArtifact ? selectedArtifact.path : selectedFile;
-  const displayedCode = selectedArtifact ? selectedArtifact.source : code;
-  const effectiveEntry = projectConfig.entryPath || selectedFile;
+  const effectiveEntry = projectConfig.entryPath || files.selectedFile;
   const effectiveTransformTraversal: 'project' | 'file-only' =
     projectConfig.inputs === 'command' ? 'file-only' : 'project';
 
-  const rootNode: LayoutNode | null = useMemo(() => {
-    if (structureMode === 'coarse') {
-      if (projectModel.coarseTree) {
-        return new TreeLayoutBuilder().buildCoarse(projectModel.coarseTree);
-      }
-      return null;
-    }
+  const realizePolicy = useMemo(
+    () =>
+      projectConfig.conditionPolicy.mode === 'none' ||
+      projectConfig.conditionPolicy.mode === 'ignore'
+        ? ({ mode: 'source' } as const)
+        : projectConfig.conditionPolicy,
+    [projectConfig.conditionPolicy],
+  );
 
-    if (structureMode === 'configured') {
-      if (projectModel.view?.status === 'ready' && projectModel.view.root) {
-        return new TreeLayoutBuilder().buildConfigured(projectModel.view.root);
-      }
-      return null;
-    }
+  const realizeCapability = operations.checkConditionRealizationCapability({
+    ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
+    traversal: effectiveTransformTraversal,
+    conditions: realizePolicy,
+    inputs: 'preserve',
+    stripDeclarationsAndSetters: control.options.stripDeclarationsAndSetters,
+  });
 
-    const scannedFile = projectModel.snapshot?.files.find((file) => file.path === selectedFile);
-    if (scannedFile && scannedFile.tokens.length > 0) {
-      return new TreeLayoutBuilder().buildSourceTokens(selectedFile, scannedFile.tokens);
-    }
-    return null;
-  }, [structureMode, projectModel.coarseTree, projectModel.view, projectModel.snapshot, selectedFile]);
+  const viewBlockedReason = projectModel.viewIssue
+    ? `${projectModel.viewIssue.code}: ${projectModel.viewIssue.message}`
+    : !projectConfig.entryPath
+    ? 'Select an entry file in Settings first.'
+    : undefined;
 
-  const jumpToAnalysisLocation = useCallback(
-    (location: SourceLocation) => {
-      if (filesByName[location.path]) {
-        setSelectedArtifact(null);
-        selectFile(location.path);
-      }
-      setJumpRange(location.range);
-      setJumpToLine(location.range.line);
-      setJumpToken((val) => val + 1);
-      if (!layout.splitEnabled) {
-        layout.selectView('code');
-      }
-    },
-    [filesByName, layout, selectFile],
+  const activeDecisions = useMemo(
+    () =>
+      !operations.isConditionRealizationStale && operations.conditionRealization
+        ? operations.conditionRealization.decisions
+        : projectModel.view?.decisions ?? [],
+    [
+      operations.conditionRealization,
+      operations.isConditionRealizationStale,
+      projectModel.view?.decisions,
+    ],
+  );
+
+  const mergedDiagnostics = useMemo(() => {
+    const seen = new Set<string>();
+    const combined: ProjectIssue[] = [];
+    for (const issue of [...projectModel.issues, ...operations.transformationIssues]) {
+      const key = `${issue.code}:${issue.location?.path ?? ''}:${issue.location?.range.start ?? ''}:${issue.message}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      combined.push(issue);
+    }
+    return combined;
+  }, [projectModel.issues, operations.transformationIssues]);
+
+  const sourceTokensByFile = useMemo<
+    Readonly<Record<ProjectFilePath, readonly SourceToken[]>>
+  >(() => {
+    if (!projectModel.snapshot) return {};
+    return Object.fromEntries(
+      projectModel.snapshot.files.map((file) => [file.path, file.tokens]),
+    );
+  }, [projectModel.snapshot]);
+
+  const refsCap = operations.checkReferencesCapability();
+  const cmdCap = operations.checkCommandUsageCapability();
+  const combinedError =
+    projectModel.error ?? operations.error ?? operations.transformationError;
+
+  const modelData: WorkspaceModelData = useMemo(
+    () => ({
+      viewStatus: projectModel.view?.status ?? null,
+      viewId: projectModel.view?.id ?? null,
+      viewIssue: projectModel.viewIssue,
+      hasConditionals: projectModel.hasConditionals,
+      detectedConditions: projectModel.detectedConditions,
+      conditionDecisions: activeDecisions,
+      coarseTree: projectModel.coarseTree,
+      configuredRoot:
+        projectModel.view?.status === 'ready' ? projectModel.view.root : null,
+      sourceTokensByFile,
+      catalog: projectModel.catalog,
+      metadata: projectModel.metadata,
+      diagnostics: mergedDiagnostics,
+      findings: operations.result?.findings ?? [],
+      isFindingsStale: operations.isStale,
+      isAnalyzing: operations.running,
+      error: combinedError,
+      pendingEditPlan: operations.pendingEditPlan,
+      pendingEditMetadata: operations.pendingEditMetadata,
+      isEditPlanStale: operations.isEditPlanStale,
+      artifacts: operations.artifacts,
+      canRunSourceTransformations: Boolean(
+        projectModel.snapshot && effectiveEntry,
+      ),
+      canRealizeConditions: Boolean(projectModel.snapshot) && realizeCapability.eligible,
+      realizeConditionsReason: realizeCapability.reasons[0]?.message,
+      canRunViewTransformations: projectModel.view?.status === 'ready',
+      viewTransformationReason: viewBlockedReason,
+      canRunReferences: refsCap.eligible,
+      referencesReason: refsCap.reasons[0]?.message,
+      canRunCommandUsage: cmdCap.eligible,
+      commandUsageReason: cmdCap.reasons[0]?.message,
+    }),
+    [
+      activeDecisions,
+      cmdCap.eligible,
+      cmdCap.reasons,
+      combinedError,
+      effectiveEntry,
+      mergedDiagnostics,
+      operations.artifacts,
+      operations.isEditPlanStale,
+      operations.isStale,
+      operations.pendingEditMetadata,
+      operations.pendingEditPlan,
+      operations.result?.findings,
+      operations.running,
+      projectModel.catalog,
+      projectModel.coarseTree,
+      projectModel.detectedConditions,
+      projectModel.hasConditionals,
+      projectModel.metadata,
+      projectModel.snapshot,
+      projectModel.view,
+      projectModel.viewIssue,
+      realizeCapability.eligible,
+      realizeCapability.reasons,
+      refsCap.eligible,
+      refsCap.reasons,
+      sourceTokensByFile,
+      viewBlockedReason,
+    ],
   );
 
   const stageEditPlanIfPresent = useCallback(
@@ -285,7 +190,8 @@ function App() {
   const handleRefactorSymbol = useCallback(
     (action: SymbolRefactorAction) => {
       const target =
-        projectConfig.conditionPolicy.mode === 'ignore' || projectModel.view?.status !== 'ready'
+        projectConfig.conditionPolicy.mode === 'ignore' ||
+        projectModel.view?.status !== 'ready'
           ? 'source'
           : 'selected';
       const res = operations.planTransformation({
@@ -310,82 +216,6 @@ function App() {
     ],
   );
 
-  const onDownload = (name: string) => {
-    const text = filesByName[name] ?? '';
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    downloadBlob(blob, name);
-  };
-
-  const onSelectFile = (name: string) => {
-    setSelectedArtifact(null);
-    setJumpToLine(undefined);
-    setJumpRange(undefined);
-    selectFile(name);
-    if (layout.activeView === 'diff' || layout.activeView === 'settings') {
-      return;
-    }
-  };
-
-  const handleCreateFile = (path: string) => {
-    const existed = Object.prototype.hasOwnProperty.call(filesByName, path);
-    if (!existed) {
-      upsertTextFiles(
-        { [path]: '% New TeX file\n' },
-        { recordHistory: true, label: `Create ${path}` },
-      );
-    }
-    selectFile(path);
-    if (!layout.splitEnabled) {
-      layout.selectView('code');
-    }
-  };
-
-  const realizePolicy = useMemo(
-    () =>
-      projectConfig.conditionPolicy.mode === 'none' ||
-      projectConfig.conditionPolicy.mode === 'ignore'
-        ? ({ mode: 'source' } as const)
-        : projectConfig.conditionPolicy,
-    [projectConfig.conditionPolicy],
-  );
-
-  const realizeCapability = operations.checkConditionRealizationCapability({
-    ...(effectiveEntry ? { entryPath: effectiveEntry } : {}),
-    traversal: effectiveTransformTraversal,
-    conditions: realizePolicy,
-    inputs: 'preserve',
-    stripDeclarationsAndSetters: options.stripDeclarationsAndSetters,
-  });
-
-  const viewBlockedReason = projectModel.viewIssue
-    ? `${projectModel.viewIssue.code}: ${projectModel.viewIssue.message}`
-    : !projectConfig.entryPath
-    ? 'Select an entry file in Settings first.'
-    : undefined;
-
-  const activeDecisions =
-    !operations.isConditionRealizationStale && operations.conditionRealization
-      ? operations.conditionRealization.decisions
-      : projectModel.view?.decisions ?? [];
-
-  const mergedDiagnostics = useMemo(() => {
-    const seen = new Set<string>();
-    const combined: ProjectIssue[] = [];
-    for (const issue of [...projectModel.issues, ...operations.transformationIssues]) {
-      const key = `${issue.code}:${issue.location?.path ?? ''}:${issue.location?.range.start ?? ''}:${issue.message}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      combined.push(issue);
-    }
-    return combined;
-  }, [projectModel.issues, operations.transformationIssues]);
-
-  const inputWarnings = useMemo(
-    () => mergedDiagnostics.filter((issue) => issue.code === 'missing-input'),
-    [mergedDiagnostics],
-  );
-
-  const findingsCount = operations.result?.findings.length ?? 0;
   const handleApplyTransformations = useCallback(
     (req: UnifiedTransformRequest) => {
       const folder = normalizeOutputFolder(req.outputFolder);
@@ -407,7 +237,7 @@ function App() {
       ) => {
         const { files: newFiles, primaryPath } = buildNewFileOutputs({
           artifacts,
-          existingFiles: filesByName,
+          existingFiles: files.filesByName,
           changedPaths,
           entryPath: effectiveEntry,
           outputFolder: req.outputFolder,
@@ -418,11 +248,11 @@ function App() {
           folder && folder.length > 0
             ? `Transform to ${folder}`
             : 'Output transformed files';
-        upsertTextFiles(newFiles, { recordHistory: true, label });
-        operations.discardPendingEdits();
-        setSelectedArtifact(null);
-        if (primaryPath) {
-          selectFile(primaryPath);
+        files.upsertTextFiles(newFiles, { recordHistory: true, label });
+        const targetSelect =
+          primaryPath && newFiles[primaryPath] !== undefined ? primaryPath : newKeys[0];
+        if (targetSelect) {
+          files.selectFile(targetSelect);
         }
         layout.selectView('code');
       };
@@ -446,7 +276,6 @@ function App() {
           }
           if (req.destination === 'inplace') {
             if (realized.editPlan) {
-              setSwitchToConditionFree(true);
               layout.selectView('diff');
             }
           } else {
@@ -522,7 +351,6 @@ function App() {
         }
       }
 
-      // Multi-step composed pipeline
       const steps: CompositeStepRequest[] = [];
       if (req.realizeConditions) {
         steps.push({
@@ -604,9 +432,6 @@ function App() {
       });
       if (!res) return;
       if (req.destination === 'inplace') {
-        if (req.realizeConditions && res.editPlan) {
-          setSwitchToConditionFree(true);
-        }
         stageEditPlanIfPresent(Boolean(res.editPlan));
       } else {
         const changed = new Set((res.editPlan?.edits ?? []).map((e) => e.path));
@@ -616,517 +441,188 @@ function App() {
     [
       effectiveEntry,
       effectiveTransformTraversal,
-      filesByName,
+      files,
       layout,
       operations,
       projectConfig.conditionPolicy,
       projectConfig.customCommands,
       projectConfig.inputs,
       realizePolicy,
-      selectFile,
       stageEditPlanIfPresent,
-      upsertTextFiles,
     ],
   );
 
-  const diagnosticsCount = mergedDiagnostics.length;
-  const totalDiagnosticCount =
-    diagnosticsCount +
-    findingsCount +
-    (projectModel.error || operations.error || operations.transformationError ? 1 : 0);
-
-  const handleSelectAstNode = useCallback(
-    (node: LayoutNode) => {
-      if (node.path && node.path !== selectedFile && filesByName[node.path]) {
-        setSelectedArtifact(null);
-        selectFile(node.path);
-      }
-      if (node.range) {
-        setJumpRange(node.range);
-      }
-      if (typeof node.line === 'number' && Number.isFinite(node.line)) {
-        setJumpToLine(node.line);
-        setJumpToken((value) => value + 1);
-      }
-      if (projectModel.view?.status === 'ready' && node.occurrenceKey) {
-        const allNodes = walkConfiguredNodesAdapter(projectModel.view.root);
-        const found = allNodes.find((n) => n.occurrenceKey === node.occurrenceKey) ?? null;
-        setSelectedNode(found);
-      } else {
-        setSelectedNode(null);
-      }
+  const handleRemoveNode = useCallback(
+    (node: ConfiguredNode) => {
+      if (!projectModel.view) return;
+      const sel = selectProjectNodeAdapter(projectModel.view, node.occurrenceKey);
+      const res = operations.planTransformation({
+        operation: 'edit-nodes',
+        options: {
+          target: 'selected',
+          actions: [{ kind: 'remove-node', selection: sel }],
+        },
+      });
+      stageEditPlanIfPresent(Boolean(res?.editPlan));
     },
-    [filesByName, projectModel.view, selectFile, selectedFile],
+    [operations, projectModel.view, stageEditPlanIfPresent],
   );
 
-  const renderAstView = (isSplitCompanion = false) => (
-    <div className="AstPaneComposite">
-      <NodeActionBar
-        selectedNode={selectedNode}
-        catalog={projectModel.catalog}
-        customCommands={projectConfig.customCommands}
-        onRemoveNode={() => {
-          if (!projectModel.view || !selectedNode) return;
-          const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
-          const res = operations.planTransformation({
-            operation: 'edit-nodes',
-            options: {
-              target: 'selected',
-              actions: [{ kind: 'remove-node', selection: sel }],
-            },
-          });
-          stageEditPlanIfPresent(Boolean(res?.editPlan));
-        }}
-        onRenameEnvironment={(newName) => {
-          if (!projectModel.view || !selectedNode) return;
-          const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
-          const res = operations.planTransformation({
-            operation: 'edit-nodes',
-            options: {
-              target: 'selected',
-              actions: [{ kind: 'rename-environment', selection: sel, name: newName }],
-            },
-          });
-          stageEditPlanIfPresent(Boolean(res?.editPlan));
-        }}
-        onRenameEnvironmentGlobally={(oldName, newName) => {
-          handleRefactorSymbol({
-            kind: 'rename-environment-globally',
-            oldName,
-            newName,
-          });
-        }}
-        onRenameCommand={(newName) => {
-          if (!projectModel.view || !selectedNode) return;
-          const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
-          const res = operations.planTransformation({
-            operation: 'edit-nodes',
-            options: {
-              target: 'selected',
-              actions: [{ kind: 'rename-command', selection: sel, name: newName }],
-            },
-          });
-          stageEditPlanIfPresent(Boolean(res?.editPlan));
-        }}
-        onRenameCommandGlobally={(oldName, newName) => {
-          handleRefactorSymbol({
-            kind: 'rename-command-globally',
-            oldName,
-            newName,
-          });
-        }}
-        onRenameSection={(sectionCommand, starred) => {
-          if (!projectModel.view || !selectedNode) return;
-          const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
-          const res = operations.planTransformation({
-            operation: 'edit-nodes',
-            options: {
-              target: 'selected',
-              actions: [{ kind: 'rename-section', selection: sel, sectionCommand, starred }],
-            },
-          });
-          stageEditPlanIfPresent(Boolean(res?.editPlan));
-        }}
-        onUnwrapNode={() => {
-          if (!projectModel.view || !selectedNode) return;
-          const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
-          const res = operations.planTransformation({
-            operation: 'edit-nodes',
-            options: {
-              target: 'selected',
-              actions: [{ kind: 'unwrap-node', selection: sel }],
-            },
-          });
-          stageEditPlanIfPresent(Boolean(res?.editPlan));
-        }}
-        onUpsertCustomCommand={projectConfig.upsertCustomCommand}
-        onWrapNode={(wrapperName) => {
-          if (!projectModel.view || !selectedNode) return;
-          const sel = selectProjectNodeAdapter(projectModel.view, selectedNode.occurrenceKey);
-          const res = operations.planTransformation({
-            operation: 'edit-nodes',
-            options: {
-              target: 'selected',
-              actions: [{ kind: 'wrap-node', selection: sel, name: wrapperName }],
-            },
-          });
-          stageEditPlanIfPresent(Boolean(res?.editPlan));
-        }}
-        onClearSelection={() => setSelectedNode(null)}
-      />
-      <ASTview
-        key={`${selectedFile}:${projectModel.view?.id ?? ''}:${isSplitCompanion ? 'split' : 'main'}`}
-        root={rootNode}
-        selectedNodeKey={selectedNode?.occurrenceKey ?? null}
-        isSidePanel={false}
-        structureMode={structureMode}
-        onChangeStructureMode={setStructureMode}
-        isConfiguredAvailable={projectModel.view?.status === 'ready'}
-        viewIssue={projectModel.viewIssue}
-        inputMode={projectConfig.inputs}
-        onChangeInputMode={projectConfig.setInputMode}
-        inputWarnings={inputWarnings}
-        coarseOptions={projectConfig.coarseTreeOptions}
-        onChangeCoarseOptions={projectConfig.setCoarseTreeOptions}
-        hasConditionals={projectModel.hasConditionals}
-        conditionPolicy={projectConfig.conditionPolicy}
-        detectedConditions={projectModel.detectedConditions}
-        onConfigureConditions={projectConfig.setConditionPolicy}
-        splitEnabled={layout.splitEnabled}
-        onToggleSplit={isSplitCompanion ? undefined : layout.toggleSplit}
-        onSelectNode={handleSelectAstNode}
-      />
-    </div>
+  const handleRenameEnvironment = useCallback(
+    (node: ConfiguredNode, newName: string) => {
+      if (!projectModel.view) return;
+      const sel = selectProjectNodeAdapter(projectModel.view, node.occurrenceKey);
+      const res = operations.planTransformation({
+        operation: 'edit-nodes',
+        options: {
+          target: 'selected',
+          actions: [{ kind: 'rename-environment', selection: sel, name: newName }],
+        },
+      });
+      stageEditPlanIfPresent(Boolean(res?.editPlan));
+    },
+    [operations, projectModel.view, stageEditPlanIfPresent],
   );
 
-  const renderPrimaryView = () => {
-    if (fileNames.length === 0) {
-      return (
-        <WelcomeEmptyState
-          onUploadFiles={() => setUploadFilesTrigger((c) => c + 1)}
-          onUploadFolder={() => setUploadFolderTrigger((c) => c + 1)}
-          onLoadDemo={loadDemoProject}
-          onDropFiles={(items) => {
-            void upsertFileItems(items);
-          }}
-        />
-      );
-    }
+  const handleRenameCommand = useCallback(
+    (node: ConfiguredNode, newName: string) => {
+      if (!projectModel.view) return;
+      const sel = selectProjectNodeAdapter(projectModel.view, node.occurrenceKey);
+      const res = operations.planTransformation({
+        operation: 'edit-nodes',
+        options: {
+          target: 'selected',
+          actions: [{ kind: 'rename-command', selection: sel, name: newName }],
+        },
+      });
+      stageEditPlanIfPresent(Boolean(res?.editPlan));
+    },
+    [operations, projectModel.view, stageEditPlanIfPresent],
+  );
 
-    switch (layout.activeView) {
-      case 'code':
-        return (
-          <>
-            {selectedArtifact ? (
-              <div className="ArtifactBanner">
-                <span>
-                  Viewing generated artifact: <code>{selectedArtifact.path}</code>
-                </span>
-                <button
-                  type="button"
-                  className="ArtifactBannerBtn"
-                  onClick={() => setSelectedArtifact(null)}
-                >
-                  Return to source
-                </button>
-              </div>
-            ) : null}
-            <Codeview
-              filename={displayedFilename}
-              code={displayedCode}
-              jumpToLine={jumpToLine}
-              jumpRange={jumpRange}
-              jumpToken={jumpToken}
-            />
-          </>
-        );
+  const handleRenameSection = useCallback(
+    (node: ConfiguredNode, sectionCommand: SectionCommandName, starred: boolean) => {
+      if (!projectModel.view) return;
+      const sel = selectProjectNodeAdapter(projectModel.view, node.occurrenceKey);
+      const res = operations.planTransformation({
+        operation: 'edit-nodes',
+        options: {
+          target: 'selected',
+          actions: [{ kind: 'rename-section', selection: sel, sectionCommand, starred }],
+        },
+      });
+      stageEditPlanIfPresent(Boolean(res?.editPlan));
+    },
+    [operations, projectModel.view, stageEditPlanIfPresent],
+  );
 
-      case 'ast':
-        return renderAstView(false);
+  const handleUnwrapNode = useCallback(
+    (node: ConfiguredNode) => {
+      if (!projectModel.view) return;
+      const sel = selectProjectNodeAdapter(projectModel.view, node.occurrenceKey);
+      const res = operations.planTransformation({
+        operation: 'edit-nodes',
+        options: {
+          target: 'selected',
+          actions: [{ kind: 'unwrap-node', selection: sel }],
+        },
+      });
+      stageEditPlanIfPresent(Boolean(res?.editPlan));
+    },
+    [operations, projectModel.view, stageEditPlanIfPresent],
+  );
 
-      case 'transformations':
-        return (
-          <OperationsDialog
-            variant="view"
-            isOpen={true}
-            onClose={() => layout.selectView('code')}
-            options={options}
-            onChange={setOptions}
-            entryFile={effectiveEntry}
-            conditionPolicy={projectConfig.conditionPolicy}
-            hasConditionals={projectModel.hasConditionals}
-            detectedConditions={projectModel.detectedConditions}
-            onConfigureConditions={projectConfig.setConditionPolicy}
-            defaultTransformTarget={
-              projectConfig.conditionPolicy.mode === 'ignore' ? 'source' : 'selected'
-            }
-            canRunSourceTransformations={Boolean(projectModel.snapshot && effectiveEntry)}
-            canRealizeConditions={Boolean(projectModel.snapshot) && realizeCapability.eligible}
-            realizeConditionsReason={realizeCapability.reasons[0]?.message}
-            conditionDecisions={activeDecisions}
-            canRunViewTransformations={projectModel.view?.status === 'ready'}
-            viewTransformationReason={viewBlockedReason}
-            onApplyTransformations={handleApplyTransformations}
-            artifacts={operations.artifacts}
-            onDownloadZip={() => {
-              if (operations.artifacts.length > 0) {
-                downloadZipArchive(
-                  operations.artifacts.map((a) => ({ path: a.path, content: a.source })),
-                  'preptex-export.zip',
-                );
-              }
-            }}
-            onDownloadArtifact={(art) => {
-              const overrideName =
-                operations.artifacts.length === 1 ? normalizeOutputName(options.outputName) : '';
-              const blob = new Blob([art.source], { type: 'text/plain;charset=utf-8' });
-              downloadBlob(blob, overrideName || art.path);
-            }}
-            onSelectArtifact={(art) => {
-              setSelectedArtifact(art);
-              layout.selectView('code');
-            }}
-          />
-        );
+  const handleWrapNode = useCallback(
+    (node: ConfiguredNode, wrapperName: string) => {
+      if (!projectModel.view) return;
+      const sel = selectProjectNodeAdapter(projectModel.view, node.occurrenceKey);
+      const res = operations.planTransformation({
+        operation: 'edit-nodes',
+        options: {
+          target: 'selected',
+          actions: [{ kind: 'wrap-node', selection: sel, name: wrapperName }],
+        },
+      });
+      stageEditPlanIfPresent(Boolean(res?.editPlan));
+    },
+    [operations, projectModel.view, stageEditPlanIfPresent],
+  );
 
-      case 'catalog':
-        return (
-          <CatalogDialog
-            variant="view"
-            isOpen={true}
-            onClose={() => layout.selectView('code')}
-            catalog={projectModel.catalog}
-            customCommands={projectConfig.customCommands}
-            onUpsertCustomCommand={projectConfig.upsertCustomCommand}
-            onRemoveCustomCommand={projectConfig.removeCustomCommand}
-            onRefactorSymbol={handleRefactorSymbol}
-            onSelectLocation={jumpToAnalysisLocation}
-          />
-        );
+  const handleStageEditPlan = useCallback(
+    (plan: ProjectEditPlan, metadata?: StagedEditMetadata) => {
+      operations.stageExternalEditPlan(plan, metadata);
+    },
+    [operations],
+  );
 
-      case 'metadata':
-        return (
-          <MetadataDialog
-            variant="view"
-            isOpen={true}
-            onClose={() => layout.selectView('code')}
-            metadata={projectModel.metadata}
-            onEditMetadata={(action) => handleRefactorSymbol(action)}
-            onSelectLocation={jumpToAnalysisLocation}
-          />
-        );
+  const handleApplyPendingEdits = useCallback(
+    ({
+      switchToConditionFree,
+      historyLabel,
+    }: {
+      readonly switchToConditionFree: boolean;
+      readonly historyLabel: string;
+    }) => {
+      const plan = operations.pendingEditPlan;
+      const isConditionRealization =
+        plan?.provenance.request.operation === 'realize-conditions';
+      return operations.applyPendingEdits((updatedFiles: FilesMap) => {
+        files.upsertTextFiles(updatedFiles, {
+          recordHistory: true,
+          label: historyLabel,
+        });
+        if (isConditionRealization && switchToConditionFree) {
+          projectConfig.setConditionPolicy({ mode: 'none' });
+        }
+        layout.selectView('code');
+      });
+    },
+    [files, layout, operations, projectConfig],
+  );
 
-      case 'diagnostics':
-        return (
-          <LogDialog
-            variant="view"
-            isOpen={true}
-            onClose={() => layout.selectView('code')}
-            diagnostics={mergedDiagnostics}
-            error={projectModel.error || operations.error || operations.transformationError}
-            findings={operations.result?.findings}
-            isStale={operations.isStale}
-            onRunReferences={() => operations.runReferences()}
-            canRunReferences={operations.checkReferencesCapability().eligible}
-            referencesReason={operations.checkReferencesCapability().reasons[0]?.message}
-            onRunCommandUsage={() => operations.runCommandUsage()}
-            canRunCommandUsage={operations.checkCommandUsageCapability().eligible}
-            commandUsageReason={operations.checkCommandUsageCapability().reasons[0]?.message}
-            isAnalyzing={operations.running}
-            onSelectLocation={jumpToAnalysisLocation}
-          />
-        );
-
-      case 'diff':
-        return (
-          <EditPreviewDialog
-            variant="view"
-            isOpen={true}
-            onClose={() => layout.returnFromDiff('code')}
-            editPlan={operations.pendingEditPlan}
-            isStale={operations.isEditPlanStale}
-            error={operations.transformationError}
-            switchToConditionFree={switchToConditionFree}
-            onToggleSwitchToConditionFree={setSwitchToConditionFree}
-            onSelectLocation={(path, line) => {
-              if (filesByName[path]) {
-                setSelectedArtifact(null);
-                selectFile(path);
-              }
-              setJumpRange(undefined);
-              setJumpToLine(line);
-              setJumpToken((val) => val + 1);
-              if (!layout.splitEnabled) {
-                layout.selectView('code');
-              }
-            }}
-            onDiscard={() => {
-              operations.discardPendingEdits();
-              layout.returnFromDiff('code');
-            }}
-            onApply={() => {
-              const plan = operations.pendingEditPlan;
-              const isConditionRealization =
-                plan?.provenance.request.operation === 'realize-conditions';
-              const label = getOperationHistoryLabel(plan?.provenance.request.operation);
-              operations.applyPendingEdits((updatedFiles: FilesMap) => {
-                upsertTextFiles(updatedFiles, { recordHistory: true, label });
-                setSelectedNode(null);
-                setSelectedArtifact(null);
-                if (isConditionRealization && switchToConditionFree) {
-                  projectConfig.setConditionPolicy({ mode: 'none' });
-                }
-                layout.selectView('code');
-              });
-            }}
-          />
-        );
-
-      case 'settings':
-        return (
-          <ProjectSetupDialog
-            variant="view"
-            isOpen={true}
-            onClose={() => layout.selectView('code')}
-            files={filesByName}
-            configuration={projectConfig}
-            onApply={(draft) => {
-              projectConfig.commitConfiguration(draft);
-              layout.selectView('code');
-            }}
-            detectedConditions={projectModel.detectedConditions}
-            customCommands={projectConfig.customCommands}
-            onRemoveCustomCommand={projectConfig.removeCustomCommand}
-            splitEnabled={layout.splitEnabled}
-            onToggleSplit={layout.toggleSplit}
-          />
-        );
-    }
-  };
+  const actions: WorkspaceActionHandlers = useMemo(
+    () => ({
+      onApplyTransformations: handleApplyTransformations,
+      onRefactorSymbol: handleRefactorSymbol,
+      onRunReferences: operations.runReferences,
+      onRunCommandUsage: operations.runCommandUsage,
+      onRemoveNode: handleRemoveNode,
+      onRenameEnvironment: handleRenameEnvironment,
+      onRenameCommand: handleRenameCommand,
+      onRenameSection: handleRenameSection,
+      onUnwrapNode: handleUnwrapNode,
+      onWrapNode: handleWrapNode,
+      onStageEditPlan: handleStageEditPlan,
+      onApplyPendingEdits: handleApplyPendingEdits,
+      onDiscardPendingEdits: operations.discardPendingEdits,
+    }),
+    [
+      handleApplyPendingEdits,
+      handleApplyTransformations,
+      handleRefactorSymbol,
+      handleRemoveNode,
+      handleRenameCommand,
+      handleRenameEnvironment,
+      handleRenameSection,
+      handleStageEditPlan,
+      handleUnwrapNode,
+      handleWrapNode,
+      operations.discardPendingEdits,
+      operations.runCommandUsage,
+      operations.runReferences,
+    ],
+  );
 
   return (
-    <div className="AppShell">
-      <WorkspaceHeader
-        activeView={layout.activeView}
-        splitEnabled={layout.splitEnabled}
-        sidebarCollapsed={layout.sidebarCollapsed}
-        openMenu={layout.openMenu}
-        onSelectView={layout.selectView}
-        onToggleSplit={layout.toggleSplit}
-        onToggleSidebar={layout.toggleSidebar}
-        onToggleMenu={layout.toggleMenu}
-        onCloseMenu={() => layout.setOpenMenu(null)}
-        canGoBack={canGoBack}
-        canGoForward={canGoForward}
-        backLabel={backLabel}
-        forwardLabel={forwardLabel}
-        onGoBack={() => {
-          operations.discardPendingEdits();
-          setSelectedNode(null);
-          setSelectedArtifact(null);
-          goBack();
-        }}
-        onGoForward={() => {
-          operations.discardPendingEdits();
-          setSelectedNode(null);
-          setSelectedArtifact(null);
-          goForward();
-        }}
-        entryPath={projectConfig.entryPath}
-        selectedFile={selectedFile}
-        fileCount={fileNames.length}
-        conditionPolicy={projectConfig.conditionPolicy}
-        hasConditionals={projectModel.hasConditionals}
-        viewStatus={projectModel.view?.status ?? null}
-        pendingDiffCount={operations.pendingEditPlan?.edits.length ?? 0}
-        diagnosticCount={totalDiagnosticCount}
-        artifactCount={operations.artifacts.length}
-        onTriggerUploadFiles={() => setUploadFilesTrigger((c) => c + 1)}
-        onTriggerUploadFolder={() => setUploadFolderTrigger((c) => c + 1)}
-        onRequestNewFile={() => {
-          layout.setSidebarCollapsed(false);
-          setNewFileTrigger((c) => c + 1);
-        }}
-        onLoadDemo={loadDemoProject}
-        onDownloadProjectZip={() => {
-          const entries = Object.entries(filesByName).map(([path, content]) => ({ path, content }));
-          if (entries.length > 0) {
-            downloadZipArchive(entries, 'preptex-project.zip');
-          }
-        }}
-        onDownloadActiveFile={() => {
-          if (selectedFile) {
-            onDownload(selectedFile);
-          }
-        }}
-        onResetWorkspace={() => {
-          resetFiles();
-          operations.discardPendingEdits();
-          setSelectedNode(null);
-          setSelectedArtifact(null);
-          layout.selectView('code');
-        }}
-      />
-
-      <div className="WorkspaceMainRow">
-        {layout.sidebarCollapsed ? (
-          <div className="WorkspaceCollapsedRail">
-            <button
-              type="button"
-              className="WorkspaceCollapsedRailBtn"
-              onClick={layout.toggleSidebar}
-              aria-label="Show file explorer"
-              title="Show file explorer"
-            >
-              »
-            </button>
-          </div>
-        ) : null}
-        <aside
-          className={`WorkspaceSidebar${layout.sidebarCollapsed ? ' is-collapsed' : ''}`}
-          aria-hidden={layout.sidebarCollapsed}
-        >
-          <Filetree
-            files={fileNames}
-            selected={selectedFile}
-            entryPath={projectConfig.entryPath}
-            onSelect={onSelectFile}
-            onSetEntry={(path) => projectConfig.setEntryPath(path)}
-            onCreateFile={handleCreateFile}
-            onDownload={onDownload}
-            onRemove={(name) => removeFile(name)}
-            onUploadFiles={(fl) => {
-              void upsertFiles(fl);
-            }}
-            onUploadFolder={(fl) => {
-              void upsertFiles(fl, { filterExtensions: true });
-            }}
-            onDropFiles={(items) => {
-              void upsertFileItems(items);
-            }}
-            uploadError={uploadError}
-            uploadNotice={uploadNotice}
-            onDismissUploadNotice={clearUploadNotice}
-            uploadFilesTrigger={uploadFilesTrigger}
-            uploadFolderTrigger={uploadFolderTrigger}
-            newFileTrigger={newFileTrigger}
-            onCollapseSidebar={layout.toggleSidebar}
-          />
-        </aside>
-
-        <main className="WorkspaceViewport">
-          <div className="WorkspacePrimaryPane">{renderPrimaryView()}</div>
-
-          {layout.splitEnabled && fileNames.length > 0 ? (
-            <div className="WorkspaceSplitPane" aria-label="Split companion view">
-              {layout.activeView === 'code' ? (
-                renderAstView(true)
-              ) : (
-                <>
-                  <div className="SplitPaneHeader">
-                    <span>Code Companion</span>
-                    <button
-                      type="button"
-                      className="AstPhase0ToggleBtn"
-                      onClick={() => layout.setSplitEnabled(false)}
-                    >
-                      Close Split
-                    </button>
-                  </div>
-                  <Codeview
-                    filename={displayedFilename}
-                    code={displayedCode}
-                    jumpToLine={jumpToLine}
-                    jumpRange={jumpRange}
-                    jumpToken={jumpToken}
-                  />
-                </>
-              )}
-            </div>
-          ) : null}
-        </main>
-      </div>
-    </div>
+    <PrepTeXWorkspace
+      files={files}
+      projectConfig={projectConfig}
+      layout={layout}
+      control={control}
+      model={modelData}
+      actions={actions}
+      demoFiles={DEFAULT_DEMO_PROJECT_FILES}
+    />
   );
 }
 
