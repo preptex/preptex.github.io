@@ -290,3 +290,30 @@ test('ignores malformed persisted AST options', () => {
   expect(screen.getByRole('region', { name: 'Empty workspace' })).toBeInTheDocument();
   window.localStorage.clear();
 });
+
+test('file upload filters files by extension keeping TeX files only and reporting skipped files', async () => {
+  render(<App />);
+
+  const fileInput = screen.getByLabelText('Upload files');
+  expect(fileInput).toHaveAttribute('accept');
+  expect(fileInput.getAttribute('accept')).toContain('.tex');
+
+  userEvent.upload(fileInput, [
+    new File(['\\section{Main}'], 'main.tex', { type: 'text/plain' }),
+    new File(['%PDF-1.7'], 'report.pdf', { type: 'application/pdf' }),
+  ]);
+
+  expect(await screen.findByText('main.tex', { selector: '.CodeviewFilename' })).toBeInTheDocument();
+  expect(await screen.findByRole('status')).toHaveTextContent(/skipped 1 non-tex file/i);
+});
+
+test('file upload shows upload error when only non-TeX files are uploaded', async () => {
+  render(<App />);
+
+  userEvent.upload(screen.getByLabelText('Upload files'), [
+    new File(['some binary or image'], 'image.png', { type: 'image/png' }),
+  ]);
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(/no supported tex files/i);
+  expect(screen.getByRole('region', { name: 'Empty workspace' })).toBeInTheDocument();
+});
